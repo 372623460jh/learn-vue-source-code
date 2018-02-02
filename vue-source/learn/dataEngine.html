@@ -1,35 +1,43 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-	<meta charset="UTF-8">
-	<title>Title</title>
+    <meta charset="UTF-8">
+    <title>Title</title>
 </head>
 <body>
 <div id="app" class="message">{{test.test2}}<p></p></p></div>
 </body>
-<!--<script src="./dataEngine.js" type="text/javascript"></script>-->
+<script src="./dataEngine.js" type="text/javascript"></script>
 <script src="./vue_test.js" type="text/javascript"></script>
 <script>
 
-    var app = new Vue({
-        el: '#app',
-        data: {
-            message: 'Hello Vue!',
-            test: {
-                test1: '123123',
-                test2: [
-                    {
-                        test2: 123
-                    }
-                ]
-            },
-            test1: [
-                {
-                    test1: 6548
-                }
-            ]
-        }
-    });
+    //    var app = new Vue({
+    //        el: '#app',
+    //        data: {
+    //            message: 'Hello Vue!',
+    //            test: {
+    //                test1: '123123',
+    //                test2: [
+    //                    {
+    //                        test2: 123
+    //                    }
+    //                ]
+    //            },
+    //            test1: [
+    //                {
+    //                    test1: 6548
+    //                }
+    //            ]
+    //        }
+    //    });
+
+    var template =
+        '<div class="{{classname1}} test {{classname2}}" data-age="{{data1}}测试自定义属性{{data2}}">' +
+        '   <span class="{{spanclass}}">{{name}}</span>' +
+        '</div>';
+
+    window.testparse(template);
+
 
     //    var template =
     //        '<div class="{{classname1}} test {{classname2}}" data-age="{{data1}}测试自定义属性{{data2}}">' +

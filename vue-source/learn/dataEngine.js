@@ -455,410 +455,457 @@
             }
         }
     };
-
     window.He = He;
-})(window);
+
+    // 匹配出dom字串中的所有属性 class="test"
+    var attribute = /^\s*([^\s"'<>\/=]+)(?:\s*(=)\s*(?:"([^"]*)"+|'([^']*)'+|([^\s"'=<>`]+)))?/;
+    var ncname = '[a-zA-Z_][\\w\\-\\.]*';
+    var qnameCapture = "((?:" + ncname + "\\:)?" + ncname + ")";
+    // 匹配出dom字串中开头的标签名 <div></div>中的<div
+    var startTagOpen = new RegExp(("^<" + qnameCapture));
+    // 匹配出dom字符串的结尾 <img/>中的/>
+    var startTagClose = /^\s*(\/?)>/;
+    // 匹配结束标签 <div></div>中的</div>
+    var endTag = new RegExp(("^<\\/" + qnameCapture + "[^>]*>"));
+    // 匹配DOCTYPE标签 <!DOCTYPE html>
+    var doctype = /^<!DOCTYPE [^>]+>/i;
+    // 匹配注释注释开头 <!--
+    var comment = /^<!--/;
+    // 匹配<![
+    var conditionalComment = /^<!\[/;
+
+    // 段落元素
+    var isNonPhrasingTag = makeMap(
+        'address,article,aside,base,blockquote,body,caption,col,colgroup,dd,' +
+        'details,dialog,div,dl,dt,fieldset,figcaption,figure,footer,form,' +
+        'h1,h2,h3,h4,h5,h6,head,header,hgroup,hr,html,legend,li,menuitem,meta,' +
+        'optgroup,option,param,rp,rt,source,style,summary,tbody,td,tfoot,th,thead,' +
+        'title,tr,track'
+    );
+
+    // 自闭合的元素，结尾不需要斜线
+    // <link rel="stylesheet" href="a.css">
+    var isUnaryTag = makeMap(
+        'area,base,br,col,embed,frame,hr,img,input,isindex,keygen,' +
+        'link,meta,param,source,track,wbr'
+    );
+
+    // 可忽略的自闭合元素
+    var canBeLeftOpenTag = makeMap(
+        'colgroup,dd,dt,li,options,p,td,tfoot,th,thead,tr,source'
+    );
+
+    // script,style,textarea标签
+    var isPlainTextElement = makeMap('script,style,textarea', true);
+
+    // 处理pre,textarea标签下有\n导致pre,textarea内容换号的bug
+    var isIgnoreNewlineTag = makeMap('pre,textarea', true);
+    var shouldIgnoreFirstNewline = function (tag, html) {
+        return tag && isIgnoreNewlineTag(tag) && html[0] === '\n';
+    };
+
+    //解决正则表达式bug
+    var IS_REGEX_CAPTURING_BROKEN = false;
+    'x'.replace(/x(.)?/g, function (m, g) {
+        IS_REGEX_CAPTURING_BROKEN = g === '';
+    });
+
+    //
+    var reCache = {};
 
 
-// 匹配出dom字串中的所有属性 class="test"
-var attribute = /^\s*([^\s"'<>\/=]+)(?:\s*(=)\s*(?:"([^"]*)"+|'([^']*)'+|([^\s"'=<>`]+)))?/;
-var ncname = '[a-zA-Z_][\\w\\-\\.]*';
-var qnameCapture = "((?:" + ncname + "\\:)?" + ncname + ")";
-// 匹配出dom字串中开头的标签名 <div></div>中的<div
-var startTagOpen = new RegExp(("^<" + qnameCapture));
-// 匹配出dom字符串的结尾 <img/>中的/>
-var startTagClose = /^\s*(\/?)>/;
-// 匹配结束标签 <div></div>中的</div>
-var endTag = new RegExp(("^<\\/" + qnameCapture + "[^>]*>"));
-// 匹配DOCTYPE标签 <!DOCTYPE html>
-var doctype = /^<!DOCTYPE [^>]+>/i;
-// 匹配注释注释开头 <!--
-var comment = /^<!--/;
-// 匹配<![
-var conditionalComment = /^<!\[/;
-
-// 段落元素
-var isNonPhrasingTag = makeMap(
-    'address,article,aside,base,blockquote,body,caption,col,colgroup,dd,' +
-    'details,dialog,div,dl,dt,fieldset,figcaption,figure,footer,form,' +
-    'h1,h2,h3,h4,h5,h6,head,header,hgroup,hr,html,legend,li,menuitem,meta,' +
-    'optgroup,option,param,rp,rt,source,style,summary,tbody,td,tfoot,th,thead,' +
-    'title,tr,track'
-);
-
-// 自闭合的元素，结尾不需要斜线
-// <link rel="stylesheet" href="a.css">
-var isUnaryTag = makeMap(
-    'area,base,br,col,embed,frame,hr,img,input,isindex,keygen,' +
-    'link,meta,param,source,track,wbr'
-);
-
-// 可忽略的自闭合元素
-var canBeLeftOpenTag = makeMap(
-    'colgroup,dd,dt,li,options,p,td,tfoot,th,thead,tr,source'
-);
-
-// script,style,textarea标签
-var isPlainTextElement = makeMap('script,style,textarea', true);
-
-//
-var reCache = {};
-
-
-/**
- * 将用逗号分开的自创装换为集合，返回用来判断传入字串是否属于该集合的方法
- * @param str               生成集合的字串
- * @param exceptsLowerCase  是否忽略大小写
- * @returns {Function}
- */
-function makeMap(str, exceptsLowerCase) {
-    var map = Object.create(null);//创建原始对象
-    var list = str.split(',');
-    for (var i, l = list.length; i < l; i++) {
-        map[list[i]] = true;
-    }
-    return exceptsLowerCase
-        ? function (val) {
-            return map[val.toLowerCase()];
+    /**
+     * 将用逗号分开的自创装换为集合，返回用来判断传入字串是否属于该集合的方法
+     * @param str               生成集合的字串
+     * @param exceptsLowerCase  是否忽略大小写
+     * @returns {Function}
+     */
+    function makeMap(str, exceptsLowerCase) {
+        var map = Object.create(null);//创建原始对象
+        var list = str.split(',');
+        for (var i = 0, l = list.length; i < l; i++) {
+            map[list[i]] = true;
         }
-        : function (val) {
-            return map[val];
-        }
-};
-
-/**
- * 给属性中的以下字符进行解码
- * @param value
- * @param shouldDecodeNewlines
- * @returns {void|*|string|XML}
- */
-var decodingMap = {
-    '&lt;': '<',
-    '&gt;': '>',
-    '&quot;': '"',
-    '&amp;': '&',
-    '&#10;': '\n',
-    '&#9;': '\t'
-};
-var encodedAttr = /&(?:lt|gt|quot|amp|#10|#9);/g;
-function decodeAttr(value) {
-    return value.replace(encodedAttr, function (match) {
-        return decodingMap[match];
-    })
-}
-
-
-//转换AST的设置
-var options = {
-    expectHTML: true,
-    isUnaryTag: isUnaryTag,
-    canBeLeftOpenTag: canBeLeftOpenTag,
-    start: function start(tagName, attrs, unary, start, end) {
-        // 参数：节点名，属性数组，是否自闭合，开始位置，标签长度
-
-        // 匹配到一个元素开头，每生成一个AST对象，就执行一次start回调
-
-    },
-    end: function end() {
-
-        // 匹配到一个元素结尾，就执行一次end回调
-
-    },
-    chars: function chars(text) {
-        // 参数：text标签文本
-
-        // 处理text标签匹配到text标签会回调
-
-    },
-    comment: function comment(text) {
-        // 参数：注释内容
-
-        // 处理注释的回调
+        return exceptsLowerCase
+            ? function (val) {
+                return map[val.toLowerCase()];
+            }
+            : function (val) {
+                return map[val];
+            }
     }
-};
 
-/**
- * 将html字符串解析为AST （将html解析为虚拟dom）
- */
-function praseHtml(html, options) {
+    /**
+     * 给属性中的以下字符进行解码
+     * @param value
+     * @param shouldDecodeNewlines
+     * @returns {void|*|string|XML}
+     */
+    var decodingMap = {
+        '&lt;': '<',
+        '&gt;': '>',
+        '&quot;': '"',
+        '&amp;': '&',
+        '&#10;': '\n',
+        '&#9;': '\t'
+    };
+    var encodedAttr = /&(?:lt|gt|quot|amp|#10|#9);/g;
 
-    var expectHTML = options.expectHTML;
-    var stack = [];//保存还未找到闭合的元素的栈
-    var isUnaryTag$$1 = options.isUnaryTag || false;
-    var canBeLeftOpenTag$$1 = options.canBeLeftOpenTag || false;
-    var last;// 截取前剩余html字符串
-    var index;// 字符切割游标（当前字符是原字符串切割到了第几位留下的）
-    var lastTag;// 上一个匹配到的标签
-    while (html) {
-        last = html;
-        // 没有父标签 或 父标签不是script,style,textare特殊标签
-        if (!lastTag || !isPlainTextElement(lastTag)) {
+    function decodeAttr(value) {
+        return value.replace(encodedAttr, function (match) {
+            return decodingMap[match];
+        })
+    }
 
-            var textEnd = html.indexOf('<');
-            // 检查元素标签开始符前是否有其他文本
-            if (textEnd === 0) {
-                // 匹配注释
-                if (comment.test(html)) {
-                    var commentEnd = html.indexOf('-->');
-                    if (commentEnd >= 0 && options.comment) {
-                        //截取注释部分
-                        var commentContent = html.substr(4, commentEnd);
-                        options.comment(commentContent);
+
+    //转换AST的设置
+    var options = {
+        expectHTML: true,
+        isUnaryTag: isUnaryTag,
+        canBeLeftOpenTag: canBeLeftOpenTag,
+        start: function start(tagName, attrs, unary, start, end) {
+            // 参数：节点名，属性数组，是否自闭合，开始位置，标签长度
+
+            // 匹配到一个元素开头，每生成一个AST对象，就执行一次start回调
+            console.log("匹配到标签开始 " + tagName);
+
+            if (unary) {
+                //如果自闭和
+                console.log(tagName + " 标签自闭和");
+            }
+
+        },
+        end: function end() {
+
+            // 匹配到一个元素结尾，就执行一次end回调
+            console.log("匹配到标签结束 " + arguments[0]);
+        },
+        chars: function chars(text) {
+            // 参数：text标签文本
+
+            // 处理text标签匹配到text标签会回调
+            console.log("匹配到文本标签 " + text);
+
+        },
+        comment: function comment(text) {
+            // 参数：注释内容
+
+            // 处理注释的回调
+            console.log("匹配到注释 " + text);
+        }
+    };
+
+    window.testparse = function (html) {
+        praseHtml(html, options);
+    };
+
+    /**
+     * 将html字符串解析为AST （将html解析为虚拟dom）
+     */
+    function praseHtml(html, options) {
+
+        var stack = [];//保存还未找到闭合的元素的栈
+        var expectHTML = options.expectHTML;
+        var isUnaryTag$$1 = options.isUnaryTag || false;
+        var canBeLeftOpenTag$$1 = options.canBeLeftOpenTag || false;
+        var last;// 截取前剩余html字符串
+        var index = 0;// 字符切割游标（当前字符是原字符串切割到了第几位留下的）
+        var lastTag;// 上一个匹配到的标签,处理stack后会被重写复制lastTag永远指向栈顶元素
+        while (html) {
+            last = html;
+            // 没有父标签 或 父标签不是script,style,textare特殊标签
+            if (!lastTag || !isPlainTextElement(lastTag)) {
+                var textEnd = html.indexOf('<');
+                // 检查元素标签开始符前是否有其他文本
+                if (textEnd === 0) {
+                    // 匹配注释
+                    if (comment.test(html)) {
+                        var commentEnd = html.indexOf('-->');
+                        if (commentEnd >= 0 && options.comment) {
+                            //截取注释部分
+                            options.comment(html.substring(4, commentEnd));
+                        }
+                        // 将注释从html中剔除
+                        advance(commentEnd + 3);
+                        continue;
                     }
-                    // 将注释从html中剔除
-                    advance(commentEnd + 3);
-                    continue;
-                }
 
-                // 处理比如说<![CDATA["，结束于 "]]>这类标签
-                if (conditionalComment.test(html)) {
-                    var conditionalEnd = html.indexOf(']>');
-                    if (conditionalEnd >= 0) {
-                        advance(conditionalEnd + 2);
+                    // 处理比如说<![CDATA["，结束于 "]]>这类标签
+                    if (conditionalComment.test(html)) {
+                        var conditionalEnd = html.indexOf(']>');
+                        if (conditionalEnd >= 0) {
+                            advance(conditionalEnd + 2);
+                            continue;
+                        }
+                    }
+
+                    // 处理DOCTYPE标签如 <!DOCTYPE html>
+                    var doctypeMatch = html.match(doctype);
+                    if (doctypeMatch) {
+                        advance(doctypeMatch[0].length);
+                        continue;
+                    }
+
+                    // 匹配结束标签 <div></div>中的</div>
+                    var endTagMatch = html.match(endTag);
+                    if (endTagMatch) {
+                        var startIndex = index;
+                        advance(endTagMatch[0].length);
+                        parseEndTag(endTagMatch[1], startIndex, index);
+                        continue;
+                    }
+
+                    // 标签开头
+                    var startTagMatch = parseStartTag();
+                    if (startTagMatch) {
+                        // 根据匹配结果生成匹配节点的AST对象
+                        handleStartTag(startTagMatch);
+                        if (shouldIgnoreFirstNewline(lastTag, html)) {
+                            // pre,textarea元素内第一个\n换行符,将换行符替换掉,
+                            // 解决textarea,pre多空行bug
+                            advance(1);
+                        }
                         continue;
                     }
                 }
 
-                // 处理DOCTYPE标签如 <!DOCTYPE html>
-                var doctypeMatch = html.match(doctype);
-                if (doctypeMatch) {
-                    advance(doctypeMatch[0].length);
-                    continue;
-                }
+                var text,//标签中的文本
+                    rest,//切除除标签外的文本剩余
+                    next;//文本中下一个<的索引用于检查<是否有用
 
-                // 匹配结束标签 <div></div>中的</div>
-                var endTagMatch = html.match(endTag);
-                if (endTagMatch) {
-                    var startIndex = index;
-                    advance(endTagMatch.length);
-                    parseEndTag(endTagMatch[1], startIndex, index);
-                    continue;
-                }
-
-                // 标签开头
-                var startTagMatch = parseStartTag();
-                if (startTagMatch) {
-                    // 根据匹配结果生成匹配节点的AST对象
-                    handleStartTag(startTagMatch);
-                    continue;
-                }
-            }
-
-            var text,//标签中的文本
-                rest,//切除除标签外的文本剩余
-                next;//文本中下一个<的索引用于检查<是否有用
-
-            //处理html字串text标签中含有<的
-            if (textEnd >= 0) {
-                rest = html.slice(textEnd);
-                while (!endTag.test(rest) && !startTagOpen.test(rest) && !comment.test(rest) && !conditionalComment.test(rest)) {
-                    // <后没有任何标签 <得当做text标签处理
-                    next = rest.indexOf('<', 1);
-                    if (next < 0) {
-                        // <之后没有<
-                        break;
-                    }
-                    textEnd += next;
+                //处理html字串text标签中含有<的
+                if (textEnd >= 0) {
                     rest = html.slice(textEnd);
+                    while (!endTag.test(rest) && !startTagOpen.test(rest) && !comment.test(rest) && !conditionalComment.test(rest)) {
+                        // <后没有任何标签 <得当做text标签处理
+                        next = rest.indexOf('<', 1);
+                        if (next < 0) {
+                            // <之后没有<
+                            break;
+                        }
+                        textEnd += next;
+                        rest = html.slice(textEnd);
+                    }
+                    text = html.substring(0, textEnd);
+                    advance(textEnd);
                 }
-                text = html.substring(0, textEnd);
-                advance(textEnd);
-            }
 
-            // 剩余文本中没找到<全部当做text标签处理
-            if (textEnd < 0) {
-                text = html;
-                html = '';
-            }
+                // 剩余文本中没找到<全部当做text标签处理
+                if (textEnd < 0) {
+                    text = html;
+                    html = '';
+                }
 
-            //调用处理text标签的方法
-            if (options.chars && text) {
-                options.chars(text);
-            }
-        } else {
-            // 父标签是script,style,textare特殊标签
-            var endTagLength = 0;
-            var stackedTag = lastTag.toLowerCase();
-            var reStackedTag = reCache[stackedTag] || (reCache[stackedTag] = new RegExp('([\\s\\S]*?)(</' + stackedTag + '[^>]*>)', 'i'));
-            var rest$1 = html.replace(reStackedTag, function (all, text, endTag) {
-                endTagLength = endTag.length;
-                if (!isPlainTextElement(stackedTag) && stackedTag !== 'noscript') {
-                    text = text.replace(/<!--([\s\S]*?)-->/g, '$1').replace(/<!\[CDATA\[([\s\S]*?)]]>/g, '$1');
-                }
-                if (shouldIgnoreFirstNewline(stackedTag, text)) {
-                    text = text.slice(1);
-                }
-                if (options.chars) {
+                //调用处理text标签的方法
+                if (options.chars && text) {
                     options.chars(text);
                 }
-                return ''
-            });
-            index += html.length - rest$1.length;
-            html = rest$1;
-            parseEndTag(stackedTag, index - endTagLength, index);
-        }
-
-        if (html === last) {
-            // html是匹配后的 last是匹配前的 匹配前后数据没发生改变（死循环） 就当做text标签处理
-            options.chars && options.chars(html);
-            if (!stack.length && options.warn) {
-                console.error('格式化标签模板错误,匹配前后文本未变会造成死循环:' + html);
+            } else {
+                // 父标签是script,style,textare特殊标签
+                var endTagLength = 0;
+                var stackedTag = lastTag.toLowerCase();
+                var reStackedTag = reCache[stackedTag] || (reCache[stackedTag] = new RegExp('([\\s\\S]*?)(</' + stackedTag + '[^>]*>)', 'i'));
+                var rest$1 = html.replace(reStackedTag, function (all, text, endTag) {
+                    endTagLength = endTag.length;
+                    if (!isPlainTextElement(stackedTag) && stackedTag !== 'noscript') {
+                        text = text.replace(/<!--([\s\S]*?)-->/g, '$1').replace(/<!\[CDATA\[([\s\S]*?)]]>/g, '$1');
+                    }
+                    if (shouldIgnoreFirstNewline(stackedTag, text)) {
+                        text = text.slice(1);
+                    }
+                    if (options.chars) {
+                        options.chars(text);
+                    }
+                    return ''
+                });
+                index += html.length - rest$1.length;
+                html = rest$1;
+                parseEndTag(stackedTag, index - endTagLength, index);
             }
-            break;
-        }
-    }
 
-    parseEndTag();
-
-    //将匹配成功的html字串剔除
-    function advance(n) {
-        index += n;
-        html = html.substring(n);
-    }
-
-    /**
-     * 解析出元素标识(完整的标签开头)
-     */
-    function parseStartTag() {
-        // 匹配节点的tag如<div></div>匹配开头的<div中的div
-        var start = html.match(startTagOpen);
-        if (start) {
-            // 匹配结果对象
-            var match = {
-                tagName: start[1], //标签名
-                attrs: [], // 属性数组
-                start: index // 标签字符串开始位置
-            };
-            // 截取匹配后的字符串
-            advance(start[0].length);
-            var end, attr;
-            // startTagClose查询tag的关闭符号如<div></div>查找出<div>中的>
-            // attribute查询所有属性如<div class='test'></div>查找出class='test'
-            // 当匹配到标签的>时终止
-            while (!(end = html.match(startTagClose)) && (attr = html.match(attribute))) {
-                // 从html中剔除掉匹配到的属性
-                advance(attr[0].length);
-                match.attrs.push(attr);
-            }
-            if (end) {
-                // unarySlash为标签结束符>之前，属性之后的值如<div class='test' jiji></div> unarySlash就为jiji
-                match.unarySlash = end[1];
-                advance(end[0].length);
-                // end为标签的长度
-                match.end = index; //标签长度
-                return match
+            if (html === last) {
+                // html是匹配后的 last是匹配前的 匹配前后数据没发生改变（死循环） 就当做text标签处理
+                options.chars && options.chars(html);
+                if (!stack.length && options.warn) {
+                    console.error('格式化标签模板错误,匹配前后文本未变会造成死循环:' + html);
+                }
+                break;
             }
         }
-    }
 
-    /**
-     * 标签字串开头的生成AXT的方法
-     * @param match 匹配结果
-     */
-    function handleStartTag(match) {
-        var tagName = match.tagName;
-        var unarySlash = match.unarySlash;
-        if (expectHTML) {
-            // 如果是段落元素
-            if (lastTag === 'p' && isNonPhrasingTag(tagName)) {
-                //如果父元素是p元素并且当前元素是一个自闭合元素
-                parseEndTag(lastTag);
-            }
-            // 判断是不是可省略的闭合标签
-            if (canBeLeftOpenTag$$1(tagName) && lastTag === tagName) {
-                parseEndTag(tagName);
-            }
-        }
-        // 自闭合标签如img，link 判断如果是自闭合标签或者存在unarySlash返回true
-        var unary = isUnaryTag$$1(tagName) || !!unarySlash;
-        // 处理属性
-        var l = match.attrs.length;
-        var attrs = new Array(l);
-        for (var i = 0; i < l; i++) {
-            var args = match.attrs[i];
-            // 属性的值
-            var value = args[3] || args[4] || args[5] || '';
-            attrs[i] = {
-                name: args[1],//属性名
-                value: decodeAttr(value)//解码属性
-            };
-        }
-        if (!unary) {
-            //如果不是自闭合的标签往stack中压入已经检索完的AST对象
-            //包含标签名，小写标签名，属性数组里面是{属性名，值}的对象
-            stack.push({tag: tagName, lowerCasedTag: tagName.toLowerCase(), attrs: attrs});
-            //设置上衣个标签名为该标签名
-            lastTag = tagName;
-        }
-        if (options.start) {
-            //解析出一个AST对象 调用start回调方法 入参（节点名，属性数组，是否自闭合，开始位置，标签长度）
-            options.start(tagName, attrs, unary, match.start, match.end);
-        }
-    }
+        // 匹配结束调用一次清除stack中剩余的标签
+        parseEndTag();
 
-    /**
-     * 解析标签结束
-     * @param tagName
-     * @param start
-     * @param end
-     */
-    function parseEndTag(tagName, start, end) {
+        //将匹配成功的html字串剔除
+        function advance(n) {
+            index += n;
+            html = html.substring(n);
+        }
 
-        // 从后向前查找stack中第一个能和结束标签tagName匹配的索引值
-        var pos;
-        // tagName转为全小写用于和stack中元素的lowerCasedTag属性比对
-        var lowerCaseTagName;
-        if (start == null) {
-            start = index;
-        }
-        if (end == null) {
-            end = index;
-        }
-        if (tagName) {
-            lowerCaseTagName = tagName.toLowerCase();
-            // 查找结束标签对应的stack中索引值
-            for (pos = stack.length - 1; pos >= 0; pos--) {
-                if (stack[pos].lowerCasedTag === lowerCaseTagName) {
-                    break;
+        /**
+         * 解析出元素标识(完整的标签开头)
+         */
+        function parseStartTag() {
+            // 匹配节点的tag如<div></div>匹配开头的<div中的div
+            var start = html.match(startTagOpen);
+            if (start) {
+                // 匹配结果对象
+                var match = {
+                    tagName: start[1], //标签名
+                    attrs: [], // 属性数组
+                    start: index // 标签字符串开始位置
+                };
+                // 截取匹配后的字符串
+                advance(start[0].length);
+                var end, attr;
+                // startTagClose查询tag的关闭符号如<div></div>查找出<div>中的>
+                // attribute查询所有属性如<div class='test'></div>查找出class='test'
+                // 当匹配到标签的>时终止
+                while (!(end = html.match(startTagClose)) && (attr = html.match(attribute))) {
+                    // 从html中剔除掉匹配到的属性
+                    advance(attr[0].length);
+                    match.attrs.push(attr);
+                }
+                if (end) {
+                    // unarySlash为标签结束符>之前，属性之后的值如<div class='test' jiji></div> unarySlash就为jiji
+                    match.unarySlash = end[1];
+                    advance(end[0].length);
+                    // end为标签的长度
+                    match.end = index; //标签长度
+                    return match
                 }
             }
-        } else {
-            // 如果未传入结束标签名
-            pos = 0;
         }
 
-        if (pos >= 0) {
-            // 在栈中找到了对应的闭合元素
-            for (var i = stack.length - 1; i >= pos; i--) {
-                if (i > pos || !tagName) {
-                    //没有匹配到结束标签
-                    console.error("tag <" + (stack[i].tag) + "> has no matching end tag.");
+        /**
+         * 标签字串开头的生成AXT的方法
+         * @param match 匹配结果
+         */
+        function handleStartTag(match) {
+            var tagName = match.tagName;
+            var unarySlash = match.unarySlash;
+            if (expectHTML) {
+                // 如果是段落元素
+                if (lastTag === 'p' && isNonPhrasingTag(tagName)) {
+                    //如果父元素是p元素并且子元素是一个段落元素
+                    //用来处理以p父元素中包含段落元素如：
+                    //<p><h1></h1><h2><h2></p> 会被解析为4个并列的元素(p,h1,h2,p)
+                    parseEndTag(lastTag);
+                }
+                // 判断是不是可省略的闭合标签
+                if (canBeLeftOpenTag$$1(tagName) && lastTag === tagName) {
+                    // 用来处理连续出现的两个可忽略闭合元素如：
+                    // <li><li>
+                    parseEndTag(tagName);
+                }
+            }
+            // 自闭合标签如img，link 判断如果是自闭合标签或者存在unarySlash返回true
+            var unary = isUnaryTag$$1(tagName) || !!unarySlash;
+            // 处理属性
+            var l = match.attrs.length;
+            var attrs = new Array(l);
+            for (var i = 0; i < l; i++) {
+                var args = match.attrs[i];
+                // 处理正则表达式bug
+                if (IS_REGEX_CAPTURING_BROKEN && args[0].indexOf('""') === -1) {
+                    if (args[3] === '') {
+                        delete args[3];
+                    }
+                    if (args[4] === '') {
+                        delete args[4];
+                    }
+                    if (args[5] === '') {
+                        delete args[5];
+                    }
+                }
+                // 属性的值
+                var value = args[3] || args[4] || args[5] || '';
+                attrs[i] = {
+                    name: args[1],//属性名
+                    value: decodeAttr(value)//解码属性
+                };
+            }
+            if (!unary) {
+                //如果不是自闭合的标签往stack中压入已经检索完的AST对象
+                //包含标签名，小写标签名，属性数组里面是{属性名，值}的对象
+                stack.push({tag: tagName, lowerCasedTag: tagName.toLowerCase(), attrs: attrs});
+                //设置上衣个标签名为该标签名
+                lastTag = tagName;
+            }
+            if (options.start) {
+                //解析出一个AST对象 调用start回调方法 入参（节点名，属性数组，是否自闭合，开始位置，标签长度）
+                options.start(tagName, attrs, unary, match.start, match.end);
+            }
+        }
+
+        /**
+         * 解析标签结束
+         * @param tagName
+         * @param start
+         * @param end
+         */
+        function parseEndTag(tagName, start, end) {
+
+            // 从后向前查找stack中第一个能和结束标签tagName匹配的索引值
+            var pos;
+            // tagName转为全小写用于和stack中元素的lowerCasedTag属性比对
+            var lowerCaseTagName;
+            if (start == null) {
+                start = index;
+            }
+            if (end == null) {
+                end = index;
+            }
+            if (tagName) {
+                lowerCaseTagName = tagName.toLowerCase();
+                // 查找结束标签对应的stack中索引值
+                for (pos = stack.length - 1; pos >= 0; pos--) {
+                    if (stack[pos].lowerCasedTag === lowerCaseTagName) {
+                        break;
+                    }
+                }
+            } else {
+                // 如果未传入结束标签名
+                pos = 0;
+            }
+
+            if (pos >= 0) {
+                // 在栈中找到了对应的闭合元素
+                for (var i = stack.length - 1; i >= pos; i--) {
+                    if (i > pos || !tagName) {
+                        //没有匹配到结束标签
+                        console.error("标签 <" + (stack[i].tag) + "> 没有结束标签。");
+                    }
+                    if (options.end) {
+                        //执行查找到闭合元素的回调
+                        options.end(stack[i].tag, start, end);
+                    }
+                }
+
+                // 把保存还未闭合节点的栈中出栈已闭合的
+                stack.length = pos;
+                // 设置当前最后
+                lastTag = pos && stack[pos - 1].tag;
+            } else if (lowerCaseTagName === 'br') {
+                // 没在如果匹配到的是</br> 特殊处理
+                if (options.start) {
+                    options.start(tagName, [], true, start, end);
+                }
+            } else if (lowerCaseTagName === 'p') {
+                // 如果匹配到的是</p> 特殊处理
+                if (options.start) {
+                    options.start(tagName, [], false, start, end);
                 }
                 if (options.end) {
-                    //执行查找到闭合元素的回调
-                    options.end(stack[i].tag, start, end);
+                    options.end(tagName, start, end);
                 }
             }
 
-            // 把保存还未闭合节点的栈中出栈已闭合的
-            stack.length = pos;
-            // 设置当前最后
-            lastTag = pos && stack[pos - 1].tag;
-        } else if (lowerCasedTagName === 'br') {
-            // 没在如果匹配到的是</br> 特殊处理
-            if (options.start) {
-                options.start(tagName, [], true, start, end);
-            }
-        } else if (lowerCasedTagName === 'p') {
-            // 如果匹配到的是</p> 特殊处理
-            if (options.start) {
-                options.start(tagName, [], false, start, end);
-            }
-            if (options.end) {
-                options.end(tagName, start, end);
-            }
         }
-
     }
-}
+
+})(window);
+
+
+
 

@@ -10725,8 +10725,7 @@
 // `createCompilerCreator` allows creating compilers that use alternative
 // parser/optimizer/codegen, e.g the SSR optimizing compiler.
 // Here we just export a default compiler using the default parts.
-    var createCompiler = createCompilerCreator(function baseCompile(template,
-                                                                    options) {
+    var createCompiler = createCompilerCreator(function baseCompile(template, options) {
         var ast = parse(template.trim(), options);
         if (options.optimize !== false) {
             optimize(ast, options);
