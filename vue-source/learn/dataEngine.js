@@ -460,17 +460,19 @@
 })(window);
 
 
-// 匹配出dom字串中的所有属性
+// 匹配出dom字串中的所有属性 class="test"
 var attribute = /^\s*([^\s"'<>\/=]+)(?:\s*(=)\s*(?:"([^"]*)"+|'([^']*)'+|([^\s"'=<>`]+)))?/;
 var ncname = '[a-zA-Z_][\\w\\-\\.]*';
 var qnameCapture = "((?:" + ncname + "\\:)?" + ncname + ")";
-// 匹配出dom字串中开头的标签名
+// 匹配出dom字串中开头的标签名 <div></div>中的<div
 var startTagOpen = new RegExp(("^<" + qnameCapture));
-// 匹配出dom自创的结尾
+// 匹配出dom字符串的结尾 <img/>中的/>
 var startTagClose = /^\s*(\/?)>/;
-// 匹配DOCTYPE标签
+// 匹配结束标签 <div></div>中的</div>
+var endTag = new RegExp(("^<\\/" + qnameCapture + "[^>]*>"));
+// 匹配DOCTYPE标签 <!DOCTYPE html>
 var doctype = /^<!DOCTYPE [^>]+>/i;
-// 匹配注释
+// 匹配注释注释开头 <!--
 var comment = /^<!--/;
 // 匹配<![
 var conditionalComment = /^<!\[/;
@@ -495,6 +497,12 @@ var isUnaryTag = makeMap(
 var canBeLeftOpenTag = makeMap(
     'colgroup,dd,dt,li,options,p,td,tfoot,th,thead,tr,source'
 );
+
+// script,style,textarea标签
+var isPlainTextElement = makeMap('script,style,textarea', true);
+
+//
+var reCache = {};
 
 
 /**
@@ -541,71 +549,166 @@ function decodeAttr(value) {
 
 
 //转换AST的设置
-var options={
-    expectHTML:true,
-    isUnaryTag:isUnaryTag,
-    canBeLeftOpenTag:canBeLeftOpenTag,
-    start:function (tagName, attrs, unary, start, end) {
-        // 节点名，属性数组，是否自闭合，开始位置，标签长度
+var options = {
+    expectHTML: true,
+    isUnaryTag: isUnaryTag,
+    canBeLeftOpenTag: canBeLeftOpenTag,
+    start: function start(tagName, attrs, unary, start, end) {
+        // 参数：节点名，属性数组，是否自闭合，开始位置，标签长度
 
-        // 每生成一个AST对象就执行一次回调
+        // 匹配到一个元素开头，每生成一个AST对象，就执行一次start回调
 
+    },
+    end: function end() {
+
+        // 匹配到一个元素结尾，就执行一次end回调
+
+    },
+    chars: function chars(text) {
+        // 参数：text标签文本
+
+        // 处理text标签匹配到text标签会回调
+
+    },
+    comment: function comment(text) {
+        // 参数：注释内容
+
+        // 处理注释的回调
     }
 };
 
 /**
- * 将html解析为AST
+ * 将html字符串解析为AST （将html解析为虚拟dom）
  */
-function praseHtml(html,options) {
+function praseHtml(html, options) {
 
     var expectHTML = options.expectHTML;
-    var stack = [];
+    var stack = [];//保存还未找到闭合的元素的栈
     var isUnaryTag$$1 = options.isUnaryTag || false;
     var canBeLeftOpenTag$$1 = options.canBeLeftOpenTag || false;
-    var last;//目前剩余html字符串
-    var index;//字符切割游标
+    var last;// 截取前剩余html字符串
+    var index;// 字符切割游标（当前字符是原字符串切割到了第几位留下的）
+    var lastTag;// 上一个匹配到的标签
     while (html) {
         last = html;
+        // 没有父标签 或 父标签不是script,style,textare特殊标签
+        if (!lastTag || !isPlainTextElement(lastTag)) {
 
-        // 匹配注释
-        if(comment.test(html)){
-            var commentEnd = html.indexOf('-->');
-            if(commentEnd>=0){
-                //截取注释部分
-                var commentContent = html.substr(4,commentEnd)
+            var textEnd = html.indexOf('<');
+            // 检查元素标签开始符前是否有其他文本
+            if (textEnd === 0) {
+                // 匹配注释
+                if (comment.test(html)) {
+                    var commentEnd = html.indexOf('-->');
+                    if (commentEnd >= 0 && options.comment) {
+                        //截取注释部分
+                        var commentContent = html.substr(4, commentEnd);
+                        options.comment(commentContent);
+                    }
+                    // 将注释从html中剔除
+                    advance(commentEnd + 3);
+                    continue;
+                }
+
+                // 处理比如说<![CDATA["，结束于 "]]>这类标签
+                if (conditionalComment.test(html)) {
+                    var conditionalEnd = html.indexOf(']>');
+                    if (conditionalEnd >= 0) {
+                        advance(conditionalEnd + 2);
+                        continue;
+                    }
+                }
+
+                // 处理DOCTYPE标签如 <!DOCTYPE html>
+                var doctypeMatch = html.match(doctype);
+                if (doctypeMatch) {
+                    advance(doctypeMatch[0].length);
+                    continue;
+                }
+
+                // 匹配结束标签 <div></div>中的</div>
+                var endTagMatch = html.match(endTag);
+                if (endTagMatch) {
+                    var startIndex = index;
+                    advance(endTagMatch.length);
+                    parseEndTag(endTagMatch[1], startIndex, index);
+                    continue;
+                }
+
+                // 标签开头
+                var startTagMatch = parseStartTag();
+                if (startTagMatch) {
+                    // 根据匹配结果生成匹配节点的AST对象
+                    handleStartTag(startTagMatch);
+                    continue;
+                }
             }
-            // 将注释从html中剔除
-            advance(commentEnd+3);
-            continue;
-        }
 
-        // 处理比如说<![CDATA["，结束于 "]]>这类标签
-        if (conditionalComment.test(html)) {
-            var conditionalEnd = html.indexOf(']>');
-            if (conditionalEnd >= 0) {
-                advance(conditionalEnd + 2);
-                continue;
+            var text,//标签中的文本
+                rest,//切除除标签外的文本剩余
+                next;//文本中下一个<的索引用于检查<是否有用
+
+            //处理html字串text标签中含有<的
+            if (textEnd >= 0) {
+                rest = html.slice(textEnd);
+                while (!endTag.test(rest) && !startTagOpen.test(rest) && !comment.test(rest) && !conditionalComment.test(rest)) {
+                    // <后没有任何标签 <得当做text标签处理
+                    next = rest.indexOf('<', 1);
+                    if (next < 0) {
+                        // <之后没有<
+                        break;
+                    }
+                    textEnd += next;
+                    rest = html.slice(textEnd);
+                }
+                text = html.substring(0, textEnd);
+                advance(textEnd);
             }
+
+            // 剩余文本中没找到<全部当做text标签处理
+            if (textEnd < 0) {
+                text = html;
+                html = '';
+            }
+
+            //调用处理text标签的方法
+            if (options.chars && text) {
+                options.chars(text);
+            }
+        } else {
+            // 父标签是script,style,textare特殊标签
+            var endTagLength = 0;
+            var stackedTag = lastTag.toLowerCase();
+            var reStackedTag = reCache[stackedTag] || (reCache[stackedTag] = new RegExp('([\\s\\S]*?)(</' + stackedTag + '[^>]*>)', 'i'));
+            var rest$1 = html.replace(reStackedTag, function (all, text, endTag) {
+                endTagLength = endTag.length;
+                if (!isPlainTextElement(stackedTag) && stackedTag !== 'noscript') {
+                    text = text.replace(/<!--([\s\S]*?)-->/g, '$1').replace(/<!\[CDATA\[([\s\S]*?)]]>/g, '$1');
+                }
+                if (shouldIgnoreFirstNewline(stackedTag, text)) {
+                    text = text.slice(1);
+                }
+                if (options.chars) {
+                    options.chars(text);
+                }
+                return ''
+            });
+            index += html.length - rest$1.length;
+            html = rest$1;
+            parseEndTag(stackedTag, index - endTagLength, index);
         }
 
-        // 处理DOCTYPE标签如 <!DOCTYPE html>
-        var doctypeMatch = html.match(doctype);
-        if (doctypeMatch) {
-            advance(doctypeMatch[0].length);
-            continue;
+        if (html === last) {
+            // html是匹配后的 last是匹配前的 匹配前后数据没发生改变（死循环） 就当做text标签处理
+            options.chars && options.chars(html);
+            if (!stack.length && options.warn) {
+                console.error('格式化标签模板错误,匹配前后文本未变会造成死循环:' + html);
+            }
+            break;
         }
-
-
-
-        // 标签开头
-        var startTagMatch = parseStartTag();
-        if (startTagMatch) {
-            // 根据匹配结果生成匹配节点的AST对象
-            handleStartTag(startTagMatch);
-            continue;
-        }
-
     }
+
+    parseEndTag();
 
     //将匹配成功的html字串剔除
     function advance(n) {
@@ -658,6 +761,7 @@ function praseHtml(html,options) {
         if (expectHTML) {
             // 如果是段落元素
             if (lastTag === 'p' && isNonPhrasingTag(tagName)) {
+                //如果父元素是p元素并且当前元素是一个自闭合元素
                 parseEndTag(lastTag);
             }
             // 判断是不是可省略的闭合标签
@@ -690,6 +794,71 @@ function praseHtml(html,options) {
             //解析出一个AST对象 调用start回调方法 入参（节点名，属性数组，是否自闭合，开始位置，标签长度）
             options.start(tagName, attrs, unary, match.start, match.end);
         }
+    }
+
+    /**
+     * 解析标签结束
+     * @param tagName
+     * @param start
+     * @param end
+     */
+    function parseEndTag(tagName, start, end) {
+
+        // 从后向前查找stack中第一个能和结束标签tagName匹配的索引值
+        var pos;
+        // tagName转为全小写用于和stack中元素的lowerCasedTag属性比对
+        var lowerCaseTagName;
+        if (start == null) {
+            start = index;
+        }
+        if (end == null) {
+            end = index;
+        }
+        if (tagName) {
+            lowerCaseTagName = tagName.toLowerCase();
+            // 查找结束标签对应的stack中索引值
+            for (pos = stack.length - 1; pos >= 0; pos--) {
+                if (stack[pos].lowerCasedTag === lowerCaseTagName) {
+                    break;
+                }
+            }
+        } else {
+            // 如果未传入结束标签名
+            pos = 0;
+        }
+
+        if (pos >= 0) {
+            // 在栈中找到了对应的闭合元素
+            for (var i = stack.length - 1; i >= pos; i--) {
+                if (i > pos || !tagName) {
+                    //没有匹配到结束标签
+                    console.error("tag <" + (stack[i].tag) + "> has no matching end tag.");
+                }
+                if (options.end) {
+                    //执行查找到闭合元素的回调
+                    options.end(stack[i].tag, start, end);
+                }
+            }
+
+            // 把保存还未闭合节点的栈中出栈已闭合的
+            stack.length = pos;
+            // 设置当前最后
+            lastTag = pos && stack[pos - 1].tag;
+        } else if (lowerCasedTagName === 'br') {
+            // 没在如果匹配到的是</br> 特殊处理
+            if (options.start) {
+                options.start(tagName, [], true, start, end);
+            }
+        } else if (lowerCasedTagName === 'p') {
+            // 如果匹配到的是</p> 特殊处理
+            if (options.start) {
+                options.start(tagName, [], false, start, end);
+            }
+            if (options.end) {
+                options.end(tagName, start, end);
+            }
+        }
+
     }
 }
 

@@ -1616,16 +1616,9 @@
             //返回距离栈顶最近的满足routeName,key的页面
             for (var n = Stacks.pageFlag.length - 2; n >= 0; n--) {
                 var pg = Stacks.getPage(n);
-                if (pg.routeName === obj.routeName) {
-                    if (obj.key) {
-                        if (pg.pageKey === obj.key) {
-                            //找到离栈顶最近的正常页
-                            return pg.pageId;
-                        }
-                    } else {
-                        //找到离栈顶最近的正常页
-                        return pg.pageId;
-                    }
+                if (pg.routeName === obj.routeName && (!obj.key || pg.pageKey === obj.key)) {
+                    //找到离栈顶最近的正常页
+                    return pg.pageId;
                 }
             }
             return false;
@@ -1745,8 +1738,6 @@
                 className: 'jhAppView',
             });
             page.dom.style.display = 'none';
-            // data.container.appendChild(page.dom);
-            // data.parent.appendChild(page.dom);
         }
         // 判断是否需要加载css和js
         if (controller[page.routeName]) {
@@ -1950,12 +1941,6 @@
             }
         }
     });
-
-    /**
-     * 窗口大小改变事件
-     */
-    global.addEventListener("resize", function (e) {
-    }, false);
 
     /**
      * 核心方法块

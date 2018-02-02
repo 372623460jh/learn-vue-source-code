@@ -8774,15 +8774,12 @@
                     }
                 }
 
-                var text = (void 0), rest = (void 0), next = (void 0);
+                var text,
+                    rest,//切除除标签外的文本剩余
+                    next;
                 if (textEnd >= 0) {
                     rest = html.slice(textEnd);
-                    while (
-                    !endTag.test(rest) &&
-                    !startTagOpen.test(rest) &&
-                    !comment.test(rest) &&
-                    !conditionalComment.test(rest)
-                        ) {
+                    while (!endTag.test(rest) && !startTagOpen.test(rest) && !comment.test(rest) && !conditionalComment.test(rest)) {
                         // < in plain text, be forgiving and treat it as text
                         next = rest.indexOf('<', 1);
                         if (next < 0) {
@@ -8803,7 +8800,8 @@
                 if (options.chars && text) {
                     options.chars(text);
                 }
-            } else {
+            }
+            else {
                 var endTagLength = 0;
                 var stackedTag = lastTag.toLowerCase();
                 var reStackedTag = reCache[stackedTag] || (reCache[stackedTag] = new RegExp('([\\s\\S]*?)(</' + stackedTag + '[^>]*>)', 'i'));
@@ -9175,7 +9173,6 @@
                     closeElement(element);
                 }
             },
-
             end: function end() {
                 // remove trailing whitespace
                 var element = stack[stack.length - 1];
@@ -9188,7 +9185,6 @@
                 currentParent = stack[stack.length - 1];
                 closeElement(element);
             },
-
             chars: function chars(text) {
                 if (!currentParent) {
                     {
