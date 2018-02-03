@@ -6461,15 +6461,12 @@
         console.error(("[Vue compiler]: " + msg));
     }
 
-    function pluckModuleFunction(modules,
-                                 key) {
-        return modules
-            ? modules.map(function (m) {
+    function pluckModuleFunction(modules, key) {
+        return modules ? modules.map(function (m) {
                 return m[key];
             }).filter(function (_) {
                 return _;
-            })
-            : []
+            }) : []
     }
 
     function addProp(el, name, value) {

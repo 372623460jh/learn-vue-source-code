@@ -504,11 +504,28 @@
         return tag && isIgnoreNewlineTag(tag) && html[0] === '\n';
     };
 
-    //解决正则表达式bug
+    // 解决正则表达式bug
     var IS_REGEX_CAPTURING_BROKEN = false;
     'x'.replace(/x(.)?/g, function (m, g) {
         IS_REGEX_CAPTURING_BROKEN = g === '';
     });
+
+    // 是不是矢量标签
+    var isSVG = makeMap(
+        'svg,animate,circle,clippath,cursor,defs,desc,ellipse,filter,font-face,' +
+        'foreignObject,g,glyph,image,line,marker,mask,missing-glyph,path,pattern,' +
+        'polygon,polyline,rect,switch,symbol,text,textpath,tspan,use,view',
+        true
+    );
+
+    // 判断是否在浏览器中
+    var inBrowser = typeof window !== 'undefined';
+    // 获取浏浏览器userAgent
+    var UA = inBrowser && window.navigator.userAgent.toLowerCase();
+    // 通过userAgent判断是不是IE
+    var isIE = UA && /msie|trident/.test(UA);
+    // 通过userAgent判断是不是edge浏览器
+    var isEdge = UA && UA.indexOf('edge/') > 0;
 
     //
     var reCache = {};
@@ -536,6 +553,24 @@
     }
 
     /**
+     * 通过数组创建属性集合(把元素的属性数组转为对象)
+     * 将[{naem:'class',value:'test'}{id:'id',value:'id1'}]  ===>   {class:'test',id:'id1'}
+     * @param attrs 属性数组
+     * @returns {{}}
+     */
+    function makeAttrsMap(attrs) {
+        var map = {};
+        for (var i = 0, l = attrs.length; i < l; i++) {
+            //是否是重复属性（IE和Edge忽略此判断）
+            if (map[attrs[i].name] && !isIE && !isEdge) {
+                console.log('重复的属性：' + attrs[i].name);
+            }
+            map[attrs[i].name] = attrs[i].value;
+        }
+        return map
+    }
+
+    /**
      * 给属性中的以下字符进行解码
      * @param value
      * @param shouldDecodeNewlines
@@ -558,46 +593,372 @@
     }
 
 
-    //转换AST的设置
-    var options = {
-        expectHTML: true,
-        isUnaryTag: isUnaryTag,
-        canBeLeftOpenTag: canBeLeftOpenTag,
-        start: function start(tagName, attrs, unary, start, end) {
-            // 参数：节点名，属性数组，是否自闭合，开始位置，标签长度
-
-            // 匹配到一个元素开头，每生成一个AST对象，就执行一次start回调
-            console.log("匹配到标签开始 " + tagName);
-
-            if (unary) {
-                //如果自闭和
-                console.log(tagName + " 标签自闭和");
+    function transformNode(el, options) {
+        var warn = options.warn || baseWarn;
+        var staticClass = getAndRemoveAttr(el, 'class');
+        if ("development" !== 'production' && staticClass) {
+            var res = parseText(staticClass, options.delimiters);
+            if (res) {
+                warn(
+                    "class=\"" + staticClass + "\": " +
+                    'Interpolation inside attributes has been removed. ' +
+                    'Use v-bind or the colon shorthand instead. For example, ' +
+                    'instead of <div class="{{ val }}">, use <div :class="val">.'
+                );
             }
+        }
+        if (staticClass) {
+            el.staticClass = JSON.stringify(staticClass);
+        }
+        var classBinding = getBindingAttr(el, 'class', false /* getStatic */);
+        if (classBinding) {
+            el.classBinding = classBinding;
+        }
+    }
 
-        },
-        end: function end() {
+    function genData(el) {
+        var data = '';
+        if (el.staticClass) {
+            data += "staticClass:" + (el.staticClass) + ",";
+        }
+        if (el.classBinding) {
+            data += "class:" + (el.classBinding) + ",";
+        }
+        return data
+    }
 
-            // 匹配到一个元素结尾，就执行一次end回调
-            console.log("匹配到标签结束 " + arguments[0]);
-        },
-        chars: function chars(text) {
-            // 参数：text标签文本
+    function transformNode$1(el, options) {
+        var warn = options.warn || baseWarn;
+        var staticStyle = getAndRemoveAttr(el, 'style');
+        if (staticStyle) {
+            /* istanbul ignore if */
+            {
+                var res = parseText(staticStyle, options.delimiters);
+                if (res) {
+                    warn(
+                        "style=\"" + staticStyle + "\": " +
+                        'Interpolation inside attributes has been removed. ' +
+                        'Use v-bind or the colon shorthand instead. For example, ' +
+                        'instead of <div style="{{ val }}">, use <div :style="val">.'
+                    );
+                }
+            }
+            el.staticStyle = JSON.stringify(parseStyleText(staticStyle));
+        }
 
-            // 处理text标签匹配到text标签会回调
-            console.log("匹配到文本标签 " + text);
+        var styleBinding = getBindingAttr(el, 'style', false /* getStatic */);
+        if (styleBinding) {
+            el.styleBinding = styleBinding;
+        }
+    }
 
-        },
-        comment: function comment(text) {
-            // 参数：注释内容
+    function genData$1(el) {
+        var data = '';
+        if (el.staticStyle) {
+            data += "staticStyle:" + (el.staticStyle) + ",";
+        }
+        if (el.styleBinding) {
+            data += "style:(" + (el.styleBinding) + "),";
+        }
+        return data
+    }
 
-            // 处理注释的回调
-            console.log("匹配到注释 " + text);
+    function preTransformNode(el, options) {
+        if (el.tag === 'input') {
+            var map = el.attrsMap;
+            if (map['v-model'] && (map['v-bind:type'] || map[':type'])) {
+                var typeBinding = getBindingAttr(el, 'type');
+                var ifCondition = getAndRemoveAttr(el, 'v-if', true);
+                var ifConditionExtra = ifCondition ? ("&&(" + ifCondition + ")") : "";
+                var hasElse = getAndRemoveAttr(el, 'v-else', true) != null;
+                var elseIfCondition = getAndRemoveAttr(el, 'v-else-if', true);
+                // 1. checkbox
+                var branch0 = cloneASTElement(el);
+                // process for on the main node
+                processFor(branch0);
+                addRawAttr(branch0, 'type', 'checkbox');
+                processElement(branch0, options);
+                branch0.processed = true; // prevent it from double-processed
+                branch0.if = "(" + typeBinding + ")==='checkbox'" + ifConditionExtra;
+                addIfCondition(branch0, {
+                    exp: branch0.if,
+                    block: branch0
+                });
+                // 2. add radio else-if condition
+                var branch1 = cloneASTElement(el);
+                getAndRemoveAttr(branch1, 'v-for', true);
+                addRawAttr(branch1, 'type', 'radio');
+                processElement(branch1, options);
+                addIfCondition(branch0, {
+                    exp: "(" + typeBinding + ")==='radio'" + ifConditionExtra,
+                    block: branch1
+                });
+                // 3. other
+                var branch2 = cloneASTElement(el);
+                getAndRemoveAttr(branch2, 'v-for', true);
+                addRawAttr(branch2, ':type', typeBinding);
+                processElement(branch2, options);
+                addIfCondition(branch0, {
+                    exp: ifCondition,
+                    block: branch2
+                });
+
+                if (hasElse) {
+                    branch0.else = true;
+                } else if (elseIfCondition) {
+                    branch0.elseif = elseIfCondition;
+                }
+
+                return branch0
+            }
+        }
+    }
+
+    var baseOptions = {
+        expectHTML: true,
+        modules: [
+            {
+                staticKeys: ['staticClass'],
+                transformNode: transformNode,
+                genData: genData
+            },
+            {
+                staticKeys: ['staticStyle'],
+                transformNode: transformNode$1,
+                genData: genData$1
+            },
+            {
+                preTransformNode: preTransformNode
+            }
+        ],
+        directives: directives$1,
+        isPreTag: isPreTag,
+        isUnaryTag: isUnaryTag,
+        mustUseProp: mustUseProp,
+        canBeLeftOpenTag: canBeLeftOpenTag,
+        isReservedTag: isReservedTag,
+        getTagNamespace: getTagNamespace,
+        staticKeys: genStaticKeys(modules$1)
+    };
+
+
+    //========================================解决bug专区（开始）======================================
+
+    /**
+     * 解决IE下svg标签bug
+     * @param tag
+     * @returns {*}
+     */
+    var ieNSBug = /^xmlns:NS\d+/;
+    var ieNSPrefix = /^NS\d+:/;
+
+    function guardIESVGBug(attrs) {
+        var res = [];
+        for (var i = 0; i < attrs.length; i++) {
+            var attr = attrs[i];
+            if (!ieNSBug.test(attr.name)) {
+                attr.name = attr.name.replace(ieNSPrefix, '');
+                res.push(attr);
+            }
+        }
+        return res
+    }
+
+    //========================================解决bug专区（结束）======================================
+
+
+    /**
+     * 创建抽象语法树AST对象的方法（虚拟dom）
+     * @param tag       //标签名
+     * @param attrs     //属性名
+     * @param parent    //父节点
+     * @param ns        //命名空间
+     * @returns {{type: number, tag: *, attrsList: *, attrsMap: *, parent: *, children: Array}}
+     */
+    function createASTElement(tag, attrs, parent, ns) {
+        return {
+            type: 1,                        //标签类型（1是element节点）
+            tag: tag,                       //标签名
+            attrsList: attrs,               //标签属性数组
+            attrsMap: makeAttrsMap(attrs),  //标签属性集合
+            parent: parent,                 //父AST对象（父节点）
+            children: [],                   //子AST对象数组（子节点集合）
+            ns: ns                          //命名空间
+        }
+    }
+
+    /**
+     * 判断虚拟dom对象是不是style标签,或是没有type属性的script或时type='text/javascript'的script标签
+     * <style></style>
+     * <script></script>
+     * <script type='text/javascript'></script>
+     * @param el
+     * @returns {boolean}
+     */
+    function isForbiddenTag(el) {
+        return (el.tag === 'style' || (el.tag === 'script' && (!el.attrsMap.type || el.attrsMap.type === 'text/javascript')))
+    }
+
+    /**
+     * 特殊处理svg标签和MathML标签的命名空间
+     * @param tag
+     * @returns {*}
+     */
+    var platformGetTagNamespace = function getTagNamespace(tag) {
+        // 如果是矢量标签放回svg
+        if (isSVG(tag)) {
+            return 'svg'
+        }
+        // MathML只支持math作为root element
+        if (tag === 'math') {
+            return 'math'
         }
     };
 
-    window.testparse = function (html) {
-        praseHtml(html, options);
-    };
+    /**
+     * 将html字串解析成AST
+     * @param template
+     */
+    function parse(template) {
+        var stack = [];
+        var preserveWhitespace = options.preserveWhitespace !== false;
+        var root;
+        // 父AST对象（父虚拟节点）
+        var currentParent;
+        var inVPre = false;
+        var inPre = false;
+        var warned = false;
+
+        //转换AST的设置
+        var options = {
+            expectHTML: true,
+            isUnaryTag: isUnaryTag,
+            canBeLeftOpenTag: canBeLeftOpenTag,
+            start: function start(tag, attrs, unary, start, end) {
+                // 参数：节点名，属性数组，是否自闭合，开始位置，标签长度
+
+                // 校验命名空间 如果有父标签则将命名空间设置为父标签的命名空间如果
+                // 没有父标签且标签是svg标签则将命名空间设置位svg,如果标签是MathML标签设置命名空间为math
+                var ns = (currentParent && currentParent.ns) || platformGetTagNamespace(tag);
+
+                // 特殊处理在IE下svg标签属性名的兼容bug
+                if (isIE && ns === 'svg') {
+                    attrs = guardIESVGBug(attrs);
+                }
+
+                // 创建AST对象(虚拟dom）
+                var element = createASTElement(tag, attrs, currentParent, ns ? ns : undefined);
+
+                // 过滤模板中的script和style标签
+                if (isForbiddenTag(element)) {
+                    element.forbidden = true;
+                    console.error('模板仅负责用来映射UI相关，请不要在模板中加入副作用的标签。如:<' + tag + '>,将不会被模板引擎解析');
+                }
+
+                // apply pre-transforms
+                for (var i = 0; i < preTransforms.length; i++) {
+                    element = preTransforms[i](element, options) || element;
+                }
+
+                if (!inVPre) {
+                    processPre(element);
+                    if (element.pre) {
+                        inVPre = true;
+                    }
+                }
+                if (platformIsPreTag(element.tag)) {
+                    inPre = true;
+                }
+                if (inVPre) {
+                    processRawAttrs(element);
+                } else if (!element.processed) {
+                    // structural directives
+                    processFor(element);
+                    processIf(element);
+                    processOnce(element);
+                    // element-scope stuff
+                    processElement(element, options);
+                }
+
+                function checkRootConstraints(el) {
+                    {
+                        if (el.tag === 'slot' || el.tag === 'template') {
+                            warnOnce(
+                                "Cannot use <" + (el.tag) + "> as component root element because it may " +
+                                'contain multiple nodes.'
+                            );
+                        }
+                        if (el.attrsMap.hasOwnProperty('v-for')) {
+                            warnOnce(
+                                'Cannot use v-for on stateful component root element because ' +
+                                'it renders multiple elements.'
+                            );
+                        }
+                    }
+                }
+
+                // tree management
+                if (!root) {
+                    root = element;
+                    checkRootConstraints(root);
+                } else if (!stack.length) {
+                    // allow root elements with v-if, v-else-if and v-else
+                    if (root.if && (element.elseif || element.else)) {
+                        checkRootConstraints(element);
+                        addIfCondition(root, {
+                            exp: element.elseif,
+                            block: element
+                        });
+                    } else {
+                        warnOnce(
+                            "Component template should contain exactly one root element. " +
+                            "If you are using v-if on multiple elements, " +
+                            "use v-else-if to chain them instead."
+                        );
+                    }
+                }
+                if (currentParent && !element.forbidden) {
+                    if (element.elseif || element.else) {
+                        processIfConditions(element, currentParent);
+                    } else if (element.slotScope) { // scoped slot
+                        currentParent.plain = false;
+                        var name = element.slotTarget || '"default"';
+                        (currentParent.scopedSlots || (currentParent.scopedSlots = {}))[name] = element;
+                    } else {
+                        currentParent.children.push(element);
+                        element.parent = currentParent;
+                    }
+                }
+                if (!unary) {
+                    currentParent = element;
+                    stack.push(element);
+                } else {
+                    closeElement(element);
+                }
+            },
+            end: function end() {
+
+                // 匹配到一个元素结尾，就执行一次end回调
+                console.log("匹配到标签结束 " + arguments[0]);
+            },
+            chars: function chars(text) {
+                // 参数：text标签文本
+
+                // 处理text标签匹配到text标签会回调
+                console.log("匹配到文本标签 " + text);
+
+            },
+            comment: function comment(text) {
+                // 参数：注释内容
+
+                // 处理注释的回调
+                console.log("匹配到注释 " + text);
+            }
+        };
+    }
+
+
+    window.testparse = parse
 
     /**
      * 将html字符串解析为AST （将html解析为虚拟dom）
