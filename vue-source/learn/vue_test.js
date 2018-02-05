@@ -6479,7 +6479,7 @@
         el.plain = false;
     }
 
-// add a raw attr (use this in preTransforms)
+    // add a raw attr (use this in preTransforms)
     function addRawAttr(el, name, value) {
         el.attrsMap[name] = value;
         el.attrsList.push({name: name, value: value});
@@ -8978,7 +8978,7 @@
     var onRE = /^@|^v-on:/;
     var dirRE = /^v-|^@|^:/;
     var forAliasRE = /(.*?)\s+(?:in|of)\s+(.*)/;
-    var forIteratorRE = /,([^,\}\]]*)(?:,([^,\}\]]*))?$/;
+
     var stripParensRE = /^\(|\)$/g;
 
     var argRE = /:(.*)$/;

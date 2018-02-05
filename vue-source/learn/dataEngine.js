@@ -664,54 +664,7 @@
     }
 
     function preTransformNode(el, options) {
-        if (el.tag === 'input') {
-            var map = el.attrsMap;
-            if (map['v-model'] && (map['v-bind:type'] || map[':type'])) {
-                var typeBinding = getBindingAttr(el, 'type');
-                var ifCondition = getAndRemoveAttr(el, 'v-if', true);
-                var ifConditionExtra = ifCondition ? ("&&(" + ifCondition + ")") : "";
-                var hasElse = getAndRemoveAttr(el, 'v-else', true) != null;
-                var elseIfCondition = getAndRemoveAttr(el, 'v-else-if', true);
-                // 1. checkbox
-                var branch0 = cloneASTElement(el);
-                // process for on the main node
-                processFor(branch0);
-                addRawAttr(branch0, 'type', 'checkbox');
-                processElement(branch0, options);
-                branch0.processed = true; // prevent it from double-processed
-                branch0.if = "(" + typeBinding + ")==='checkbox'" + ifConditionExtra;
-                addIfCondition(branch0, {
-                    exp: branch0.if,
-                    block: branch0
-                });
-                // 2. add radio else-if condition
-                var branch1 = cloneASTElement(el);
-                getAndRemoveAttr(branch1, 'v-for', true);
-                addRawAttr(branch1, 'type', 'radio');
-                processElement(branch1, options);
-                addIfCondition(branch0, {
-                    exp: "(" + typeBinding + ")==='radio'" + ifConditionExtra,
-                    block: branch1
-                });
-                // 3. other
-                var branch2 = cloneASTElement(el);
-                getAndRemoveAttr(branch2, 'v-for', true);
-                addRawAttr(branch2, ':type', typeBinding);
-                processElement(branch2, options);
-                addIfCondition(branch0, {
-                    exp: ifCondition,
-                    block: branch2
-                });
-
-                if (hasElse) {
-                    branch0.else = true;
-                } else if (elseIfCondition) {
-                    branch0.elseif = elseIfCondition;
-                }
-
-                return branch0
-            }
-        }
+        console.log('预转换节点:' + el.tagName);
     }
 
     var baseOptions = {
@@ -730,16 +683,27 @@
             {
                 preTransformNode: preTransformNode
             }
-        ],
-        directives: directives$1,
-        isPreTag: isPreTag,
-        isUnaryTag: isUnaryTag,
-        mustUseProp: mustUseProp,
-        canBeLeftOpenTag: canBeLeftOpenTag,
-        isReservedTag: isReservedTag,
-        getTagNamespace: getTagNamespace,
-        staticKeys: genStaticKeys(modules$1)
+        ]
+        // directives: directives$1,
+        // isPreTag: isPreTag,
+        // isUnaryTag: isUnaryTag,
+        // mustUseProp: mustUseProp,
+        // canBeLeftOpenTag: canBeLeftOpenTag,
+        // isReservedTag: isReservedTag,
+        // getTagNamespace: getTagNamespace,
+        // staticKeys: genStaticKeys(modules$1)
     };
+
+
+    function pluckModuleFunction(modules, key) {
+        return modules ? modules.map(function (m) {
+            return m[key];
+        }).filter(function (_) {
+            return _;
+        }) : []
+    }
+
+    var ss = pluckModuleFunction(baseOptions.modules, 'transformNode');
 
 
     //========================================解决bug专区（开始）======================================
@@ -816,16 +780,166 @@
     };
 
     /**
+     * 移除并返回虚拟dom中的指定属性
+     * @param el                 虚拟dom
+     * @param name               属性名
+     * @param removeFromMap      是否从map中移除（虚拟属性中的dom有两个属性集合一个是attrsMap,一个是数组attrsList）
+     * @returns {*}
+     */
+    function getAndRemoveAttr(el, name, removeFromMap) {
+        var val;
+        if ((val = el.attrsMap[name]) != null) {
+            var list = el.attrsList;
+            for (var i = 0, l = list.length; i < l; i++) {
+                if (list[i].name === name) {
+                    list.splice(i, 1);
+                    break;
+                }
+            }
+        }
+        if (removeFromMap) {
+            delete el.attrsMap[name];
+        }
+        return val
+    }
+
+    /**
+     * 处理v-pre指令，给虚拟dom增加pre属性并移除attrsMap的v-pre属性
+     * @param el
+     */
+    function processPre(el) {
+        if (getAndRemoveAttr(el, 'v-pre') != null) {
+            el.pre = true;
+        }
+    }
+
+    /**
+     * 判断是不是pre标签
+     * @param tag 标签名字
+     * @returns {boolean}
+     */
+    function isPreTag(tag) {
+        return tag === 'pre';
+    }
+
+    /**
+     * 处理未加工的属性
+     * 给虚拟dom增加了attrs属性该属性是深拷贝了attrsList（未被加工的属性）
+     * @param el
+     */
+    function processRawAttrs(el) {
+        var l = el.attrsList.length;
+        if (l) {
+            el.attrs = new Array(l);
+            for (var i = 0; i < l; i++) {
+                el.attrs[i] = {
+                    name: el.attrsList[i].name,
+                    value: JSON.stringify(el.attrsList[i].value)
+                };
+            }
+        } else if (!el.pre) {
+            // 没有未处理属性且没有v-pre属性，给虚拟dom增加一个plain属性（基本标签）
+            el.plain = true;
+        }
+    }
+
+    /**
+     * 将_from中的属性（非原型链上）浅拷贝到to中
+     * @param to
+     * @param _from
+     * @returns {*}
+     */
+    function extend(to, _from) {
+        for (var key in _from) {
+            to[key] = _from[key];
+        }
+        return to
+    }
+
+    //===========================for指令解析（开始）===========================
+    // 匹配for指令中的in of关键字
+    var forAliasRE = /(.*?)\s+(?:in|of)\s+(.*)/;
+    // 用于替换开头的（和结尾的）
+    var stripParensRE = /^\(|\)$/g;
+    // 检测v-for中的索引值
+    var forIteratorRE = /,([^,\}\]]*)(?:,([^,\}\]]*))?$/;
+
+    /**
+     * 解析for指令到虚拟dom对象中（增加for指令相关的属性）
+     * @param el
+     */
+    function processFor(el) {
+        var exp;
+        if ((exp = getAndRemoveAttr(el, 'v-for'))) {
+            var res = parseFor(exp);
+            if (res) {
+                // 将for指令解析出来的属性挂载到虚拟dom对象上
+                // for:被循环对象（data）
+                // alias：从被循环对象循环出来的（item，有该属性无iterator1，iterator2）
+                // iterator1属性对应有索引的value（有该属性无alias）
+                // iterator2属性对应有索引的key（有该属性无alias）
+                extend(el, res);
+            } else {
+                console.error("无效的v-for指令" + exp);
+            }
+        }
+    }
+
+    /**
+     * 解析for指令详细方法
+     * @param exp
+     * @returns {{}}
+     */
+    function parseFor(exp) {
+        // 匹配for指令中的in of关键字
+        var inMatch = exp.match(forAliasRE);
+        if (!inMatch) {
+            return
+        }
+        // 结果对象
+        var res = {};
+        // v-for='item in data'
+        // for属性是被循环对象名（data）
+        res.for = inMatch[2].trim();
+        // alias是从被循环对象循环出来的（item）
+        var alias = inMatch[1].trim().replace(stripParensRE, '');
+
+        // v-for="(value, key) in object"
+        // 检索出索引值
+        var iteratorMatch = alias.match(forIteratorRE);
+        if (iteratorMatch) {
+            // 存在索引值
+            res.alias = alias.replace(forIteratorRE, '');
+            // iterator1属性对应上面的value
+            res.iterator1 = iteratorMatch[1].trim();
+            if (iteratorMatch[2]) {
+                // iterator2属性对应上面的key也就是索引值
+                res.iterator2 = iteratorMatch[2].trim();
+            }
+        } else {
+            // 如果没有索引值alias属性就对应item
+            res.alias = alias;
+        }
+        return res
+    }
+
+    //===========================for指令解析（解析）===========================
+
+    /**
      * 将html字串解析成AST
      * @param template
      */
     function parse(template) {
         var stack = [];
         var preserveWhitespace = options.preserveWhitespace !== false;
+        // 预转换节点的方法集合
+        var preTransforms = [preTransformNode];
         var root;
         // 父AST对象（父虚拟节点）
         var currentParent;
+        // 有没有v-pre属性
         var inVPre = false;
+        // 是不是pre标签
         var inPre = false;
         var warned = false;
 
@@ -855,24 +969,27 @@
                     console.error('模板仅负责用来映射UI相关，请不要在模板中加入副作用的标签。如:<' + tag + '>,将不会被模板引擎解析');
                 }
 
-                // apply pre-transforms
+                // 使用预处理集合中的方法对虚拟dom进行预处理
                 for (var i = 0; i < preTransforms.length; i++) {
                     element = preTransforms[i](element, options) || element;
                 }
 
+                // 初始化pre属性
                 if (!inVPre) {
                     processPre(element);
                     if (element.pre) {
                         inVPre = true;
                     }
                 }
-                if (platformIsPreTag(element.tag)) {
-                    inPre = true;
-                }
+
+                // 初始化inPre属性
+                inPre = isPreTag(element.tag);
+
                 if (inVPre) {
                     processRawAttrs(element);
-                } else if (!element.processed) {
-                    // structural directives
+                }
+                else if (!element.processed) {
+                    //如果该虚拟节点没有被处理过，处理其if for once指令
                     processFor(element);
                     processIf(element);
                     processOnce(element);
