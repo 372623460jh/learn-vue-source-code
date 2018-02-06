@@ -672,12 +672,12 @@
         modules: [
             {
                 staticKeys: ['staticClass'],
-                transformNode: transformNode,
+                transformNode: transformNode,//处理class
                 genData: genData
             },
             {
                 staticKeys: ['staticStyle'],
-                transformNode: transformNode$1,
+                transformNode: transformNode$1,//处理style
                 genData: genData$1
             },
             {
@@ -971,214 +971,255 @@
     //===========================if指令解析（结束）============================
 
     //===========================once指令解析（开始）==========================
-    /**
-     * 解析once指令到虚拟dom对象中（增加once指令相关的属性）
-     * once：是否有v-once指令
-     * @param el
-     */
-    function processOnce(el) {
-        if (getAndRemoveAttr(el, 'v-once') != null) {
-            el.once = true;
-        }
-    }
+    // /**
+    //  * 解析once指令到虚拟dom对象中（增加once指令相关的属性）
+    //  * once：是否有v-once指令
+    //  * @param el
+    //  */
+    // function processOnce(el) {
+    //     if (getAndRemoveAttr(el, 'v-once') != null) {
+    //         el.once = true;
+    //     }
+    // }
 
     //===========================once指令解析（结束）==========================
 
-    /**
-     * 获取绑定的属性（如:key指令或bind:key指令）
-     * @param el                虚拟dom
-     * @param name              绑定的属性
-     * @param getStatic         是否去属性中取（当属性!false时去属性中直接取name）
-     * @return {*}
-     */
-    function getBindingAttr(el, name, getStatic) {
-        // 获取虚拟dom中有没有:[name]之类的指令或是v-bind:[name]之类的指令
-        var dynamicValue = getAndRemoveAttr(el, ':' + name) || getAndRemoveAttr(el, 'v-bind:' + name);
-        if (dynamicValue != null) {
-            return parseFilters(dynamicValue)
-        } else if (getStatic !== false) {
-            var staticValue = getAndRemoveAttr(el, name);
-            if (staticValue != null) {
-                //将静态属性值返回如"{"key":"zhangsan"}"
-                return JSON.stringify(staticValue)
-            }
-        }
-    }
+    // /**
+    //  * 获取绑定的属性（如:key指令或bind:key指令）
+    //  * @param el                虚拟dom
+    //  * @param name              绑定的属性
+    //  * @param getStatic         是否去属性中取（当属性!false时去属性中直接取name）
+    //  * @return {*}
+    //  */
+    // function getBindingAttr(el, name, getStatic) {
+    //     // 获取虚拟dom中有没有:[name]之类的指令或是v-bind:[name]之类的指令
+    //     var dynamicValue = getAndRemoveAttr(el, ':' + name) || getAndRemoveAttr(el, 'v-bind:' + name);
+    //     if (dynamicValue != null) {
+    //         return parseFilters(dynamicValue)
+    //     } else if (getStatic !== false) {
+    //         var staticValue = getAndRemoveAttr(el, name);
+    //         if (staticValue != null) {
+    //             //将静态属性值返回如"{"key":"zhangsan"}"
+    //             return JSON.stringify(staticValue)
+    //         }
+    //     }
+    // }
+
+
+    //===========================解析表达式（开始）==========================
+
+    // function wrapFilter(exp, filter) {
+    //     var i = filter.indexOf('(');
+    //     if (i < 0) {
+    //         return ("_f(\"" + filter + "\")(" + exp + ")")
+    //     } else {
+    //         var name = filter.slice(0, i);
+    //         var args = filter.slice(i + 1);
+    //         return ("_f(\"" + name + "\")(" + exp + "," + args)
+    //     }
+    // }
+
+    // var ss = parseFilters("{'class1': class1}");
 
     /**
      * 过滤器
      * @param exp 属性字符串（:key='test'中的test）
      * @return {*}
      */
-    function parseFilters(exp) {
-        // 是否有未闭合的单引号
-        var inSingle = false;
-        // 是否有未闭合的双引号
-        var inDouble = false;
-        // 是不是es6模板语法
-        var inTemplateString = false;
-        var inRegex = false;
-        // 未闭合的左大括号出现次数
-        var curly = 0;
-        // 未闭合的左中括号出现次数
-        var square = 0;
-        // 未闭合的左小括号出现次数
-        var paren = 0;
-        var lastFilterIndex = 0;
-        var c, //当前字符
-            prev,//上一个字符
-            i,//当前字符索引值
-            expression,
-            filters;
+    // var validDivisionCharRE = /[\w).+\-_$\]]/;//匹配 A-Z a-z 0-9 _ ) . + - $ ]
+    // function parseFilters(exp) {
+    //     // 是否有未闭合的单引号
+    //     var inSingle = false;
+    //     // 是否有未闭合的双引号
+    //     var inDouble = false;
+    //     // 是不是es6模板语法
+    //     var inTemplateString = false;
+    //     // 是否有未闭合的正则表达式
+    //     var inRegex = false;
+    //     // 未闭合的左大括号出现次数
+    //     var curly = 0;
+    //     // 未闭合的左中括号出现次数
+    //     var square = 0;
+    //     // 未闭合的左小括号出现次数
+    //     var paren = 0;
+    //     // |连接符右侧索引值（|连接符连接多个表达式）
+    //     var lastFilterIndex = 0;
+    //     var c, //当前字符
+    //         prev,//上一个字符
+    //         i,//当前字符索引值
+    //         expression,//第一个表达式
+    //         filters;//表达式栈
+    //
+    //     for (i = 0; i < exp.length; i++) {
+    //         prev = c;
+    //         // 获取字符的 Unicode 编码
+    //         c = exp.charCodeAt(i);
+    //         if (inSingle) {
+    //             //当前字符是'且上一个字符不是\转义符
+    //             if (c === 0x27 && prev !== 0x5C) {
+    //                 // 和上一个单引号形成闭合关系
+    //                 inSingle = false;
+    //             }
+    //         } else if (inDouble) {
+    //             //当前字符是"且上一个字符不是\转义符
+    //             if (c === 0x22 && prev !== 0x5C) {
+    //                 // 和上一个双引号形成闭合关系
+    //                 inDouble = false;
+    //             }
+    //         } else if (inTemplateString) {
+    //             //当前字符是`且上一个字符不是\转义符
+    //             if (c === 0x60 && prev !== 0x5C) {
+    //                 //es6模板语法形成闭合关系
+    //                 inTemplateString = false;
+    //             }
+    //         } else if (inRegex) {
+    //             //当前字符是/且上一个字符不是\转义符
+    //             if (c === 0x2f && prev !== 0x5C) {
+    //                 // 匹配正则表达式形成闭合关系
+    //                 inRegex = false;
+    //             }
+    //         } else if (c === 0x7C && exp.charCodeAt(i + 1) !== 0x7C && exp.charCodeAt(i - 1) !== 0x7C && !curly && !square && !paren) {
+    //             console.error('暂不支持|分割多个表达式');
+    //             //当前字符是|且前后一个字符都不是| 并且不处于非闭合的([{中
+    //             // if (expression === undefined) {
+    //             //     // 下一个表达式的开始位置
+    //             //     lastFilterIndex = i + 1;
+    //             //     // 第一个表达式
+    //             //     expression = exp.slice(0, i).trim();
+    //             // } else {
+    //             //     // 下一个
+    //             //     pushFilter();
+    //             // }
+    //         } else {
+    //             switch (c) {
+    //                 // " 匹配双引号
+    //                 case 0x22:
+    //                     inDouble = true;
+    //                     break;
+    //                 // ' 匹配当引号
+    //                 case 0x27:
+    //                     inSingle = true;
+    //                     break;
+    //                 // ` 匹配es6模板符号
+    //                 case 0x60:
+    //                     inTemplateString = true;
+    //                     break;
+    //                 // ( 匹配左括号
+    //                 case 0x28:
+    //                     paren++;
+    //                     break;
+    //                 // ( 匹配右括号
+    //                 case 0x29:
+    //                     paren--;
+    //                     break;
+    //                 // [ 匹配左中括号
+    //                 case 0x5B:
+    //                     square++;
+    //                     break;
+    //                 // ] 匹配右中括号
+    //                 case 0x5D:
+    //                     square--;
+    //                     break;
+    //                 // { 匹配左花括号
+    //                 case 0x7B:
+    //                     curly++;
+    //                     break;
+    //                 // } 匹配右花括号
+    //                 case 0x7D:
+    //                     curly--;
+    //                     break;
+    //             }
+    //             // 匹配正则表达式
+    //             if (c === 0x2f) {
+    //                 // 当前字符是/
+    //                 var j = i - 1;//前一个字符索引
+    //                 var p;
+    //                 // 查找字符/前第一个不是空格的字符
+    //                 for (; j >= 0; j--) {
+    //                     p = exp.charAt(j);
+    //                     if (p !== ' ') {
+    //                         // 字符/前第一个不是' '的字符
+    //                         break;
+    //                     }
+    //                 }
+    //                 // 如果/前全是空格或者不是A-Z a-z 0-9 _ ) . + - $ ]字符
+    //                 if (!p || !validDivisionCharRE.test(p)) {
+    //                     inRegex = true;
+    //                 }
+    //             }
+    //         }
+    //     }
+    //
+    //
+    //     if (expression === undefined) {
+    //         // 就一个表达式
+    //         expression = exp.slice(0, i).trim();
+    //     }
+        // else if (lastFilterIndex !== 0) {
+        //     // 多个表达式入栈最后一个表达式
+        //     pushFilter();
+        // }
 
-        for (i = 0; i < exp.length; i++) {
-            prev = c;
-            // 获取字符的 Unicode 编码
-            c = exp.charCodeAt(i);
-            if (inSingle) {
-                //当前字符是'且上一个字符不是\转义符
-                if (c === 0x27 && prev !== 0x5C) {
-                    // 和上一个单引号形成闭合关系
-                    inSingle = false;
-                }
-            } else if (inDouble) {
-                //当前字符是"且上一个字符不是\转义符
-                if (c === 0x22 && prev !== 0x5C) {
-                    // 和上一个双引号形成闭合关系
-                    inDouble = false;
-                }
-            } else if (inTemplateString) {
-                //当前字符是`且上一个字符不是\转义符
-                if (c === 0x60 && prev !== 0x5C) {
-                    //es6模板语法形成闭合关系
-                    inTemplateString = false;
-                }
-            } else if (inRegex) {
-                //当前字符是/且上一个字符不是\转义符
-                if (c === 0x2f && prev !== 0x5C) {
-                    inRegex = false;
-                }
-            } else if (c === 0x7C && exp.charCodeAt(i + 1) !== 0x7C && exp.charCodeAt(i - 1) !== 0x7C && !curly && !square && !paren) {
-                //当前字符是|且前后一个字符都不是| 并且不处于非闭合的([{中
-                if (expression === undefined) {
-                    // first filter, end of expression
-                    lastFilterIndex = i + 1;
-                    expression = exp.slice(0, i).trim();
-                } else {
-                    pushFilter();
-                }
-            } else {
-                switch (c) {
-                    // " 匹配双引号
-                    case 0x22:
-                        inDouble = true;
-                        break;
-                    // ' 匹配当引号
-                    case 0x27:
-                        inSingle = true;
-                        break;
-                    // ` 匹配es6模板符号
-                    case 0x60:
-                        inTemplateString = true;
-                        break;
-                    // ( 匹配左括号
-                    case 0x28:
-                        paren++;
-                        break;
-                    // ( 匹配右括号
-                    case 0x29:
-                        paren--;
-                        break;
-                    // [ 匹配左中括号
-                    case 0x5B:
-                        square++;
-                        break;
-                    // ] 匹配右中括号
-                    case 0x5D:
-                        square--;
-                        break;
-                    // { 匹配左花括号
-                    case 0x7B:
-                        curly++;
-                        break;
-                    // } 匹配右花括号
-                    case 0x7D:
-                        curly--;
-                        break;
-                }
-                if (c === 0x2f) {
-                    // 当前字符是/
-                    var j = i - 1;//前一个字符索引
-                    var p;
-                    // find first non-whitespace prev char
-                    for (; j >= 0; j--) {
-                        p = exp.charAt(j);
-                        if (p !== ' ') {
-                            break
-                        }
-                    }
-                    if (!p || !validDivisionCharRE.test(p)) {
-                        inRegex = true;
-                    }
-                }
-            }
-        }
+        // // 将用|分割的表达式压入filters栈中
+        // function pushFilter() {
+        //     // 将表达式压入filters栈中
+        //     (filters || (filters = [])).push(exp.slice(lastFilterIndex, i).trim());
+        //     lastFilterIndex = i + 1;
+        // }
 
-        if (expression === undefined) {
-            expression = exp.slice(0, i).trim();
-        } else if (lastFilterIndex !== 0) {
-            pushFilter();
-        }
+        // if (filters) {
+        //     for (i = 0; i < filters.length; i++) {
+        //         expression = wrapFilter(expression, filters[i]);
+        //     }
+        // }
+    //     return expression
+    // }
 
-        function pushFilter() {
-            (filters || (filters = [])).push(exp.slice(lastFilterIndex, i).trim());
-            lastFilterIndex = i + 1;
-        }
-
-        if (filters) {
-            for (i = 0; i < filters.length; i++) {
-                expression = wrapFilter(expression, filters[i]);
-            }
-        }
-        return expression
-    }
+    //===========================解析表达式（结束）==========================
 
     function processElement(element, options) {
-        processKey(element);
+
+        // 处理bind:key指令
+        // processKey(element);
 
         // 没有key属性且没有其他属性为基本标签
-        element.plain = !element.key && !element.attrsList.length;
+        // element.plain = !element.key && !element.attrsList.length;
 
-        processRef(element);
-        processSlot(element);
-        processComponent(element);
+        // 处理bind:ref指令
+        // processRef(element);
+
+        // 处理slot标签的bind:name指令
+        // processSlot(element);
+
+        // 处理slot标签的bind:is指令
+        // processComponent(element);
         for (var i = 0; i < transforms.length; i++) {
             element = transforms[i](element, options) || element;
         }
         processAttrs(element);
     }
 
-    /**
-     * 处理:key指令和bind:key指令,有该指令的话返回指令中的内容
-     * @param el
-     */
-    function processKey(el) {
-        var exp = getBindingAttr(el, 'key');
-        if (exp) {
-            if (el.tag === 'template') {
-                console.error("<template> 不能有key属性。 请把key属性用在真正的标签上。");
-            }
-            el.key = exp;
-        }
-    }
-
-    function processRef(el) {
-        var ref = getBindingAttr(el, 'ref');
-        if (ref) {
-            el.ref = ref;
-            el.refInFor = checkInFor(el);
-        }
-    }
+    // /**
+    //  * 处理:key指令和bind:key指令,有该指令的话返回指令中的内容
+    //  * @param el
+    //  */
+    // function processKey(el) {
+    //     var exp = getBindingAttr(el, 'key');
+    //     if (exp) {
+    //         if (el.tag === 'template') {
+    //             console.error("<template> 不能有key属性。 请把key属性用在真正的标签上。");
+    //         }
+    //         el.key = exp;
+    //     }
+    // }
+    //
+    // function processRef(el) {
+    //     var ref = getBindingAttr(el, 'ref');
+    //     if (ref) {
+    //         el.ref = ref;
+    //         el.refInFor = checkInFor(el);
+    //     }
+    // }
 
 
     /**

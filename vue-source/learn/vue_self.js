@@ -1474,7 +1474,26 @@
      * Core utility used in both instantiation and inheritance.
      */
     function mergeOptions(parent, child, vm) {
+        {
+            checkComponents(child);
+        }
 
+        if (typeof child === 'function') {
+            child = child.options;
+        }
+
+        normalizeProps(child, vm);
+        normalizeInject(child, vm);
+        normalizeDirectives(child);
+        var extendsFrom = child.extends;
+        if (extendsFrom) {
+            parent = mergeOptions(parent, extendsFrom, vm);
+        }
+        if (child.mixins) {
+            for (var i = 0, l = child.mixins.length; i < l; i++) {
+                parent = mergeOptions(parent, child.mixins[i], vm);
+            }
+        }
         var options = {};
         var key;
         for (key in parent) {
@@ -4512,15 +4531,31 @@
             var vm = this;
             //vue唯一标识
             vm._uid = uid$1++;
+
             var startTag, endTag;
+            /* istanbul ignore if */
+            if ("development" !== 'production' && config.performance && mark) {
+                startTag = "vue-perf-start:" + (vm._uid);
+                endTag = "vue-perf-end:" + (vm._uid);
+                mark(startTag);
+            }
+
             // a flag to avoid this being observed
             vm._isVue = true;
-            // 加工入参添加components，directives，filters，_base，加工data
-            vm.$options = mergeOptions(
-                vm.constructor.options,
-                options || {},
-                vm
-            );
+            // merge options
+            if (options && options._isComponent) {
+                // optimize internal component instantiation
+                // since dynamic options merging is pretty slow, and none of the
+                // internal component options needs special treatment.
+                initInternalComponent(vm, options);
+            } else {
+                //合并选项
+                vm.$options = mergeOptions(
+                    resolveConstructorOptions(vm.constructor),
+                    options || {},
+                    vm
+                );
+            }
             /* istanbul ignore else */
             {
                 initProxy(vm);
@@ -4535,6 +4570,13 @@
             initState(vm);
             initProvide(vm); // resolve provide after data/props
             callHook(vm, 'created');
+
+            /* istanbul ignore if */
+            if ("development" !== 'production' && config.performance && mark) {
+                vm._name = formatComponentName(vm, false);
+                mark(endTag);
+                measure(("vue " + (vm._name) + " init"), startTag, endTag);
+            }
 
             if (vm.$options.el) {
                 vm.$mount(vm.$options.el);
@@ -4565,6 +4607,25 @@
 
     function resolveConstructorOptions(Ctor) {
         var options = Ctor.options;
+        if (Ctor.super) {
+            var superOptions = resolveConstructorOptions(Ctor.super);
+            var cachedSuperOptions = Ctor.superOptions;
+            if (superOptions !== cachedSuperOptions) {
+                // super option changed,
+                // need to resolve new options.
+                Ctor.superOptions = superOptions;
+                // check if there are any late-modified/attached options (#4976)
+                var modifiedOptions = resolveModifiedOptions(Ctor);
+                // update base extend options
+                if (modifiedOptions) {
+                    extend(Ctor.extendOptions, modifiedOptions);
+                }
+                options = Ctor.options = mergeOptions(superOptions, Ctor.extendOptions);
+                if (options.name) {
+                    options.components[options.name] = Ctor;
+                }
+            }
+        }
         return options
     }
 
@@ -4605,6 +4666,11 @@
 
     //vue入口
     function Vue$3(options) {
+        if ("development" !== 'production' &&
+            !(this instanceof Vue$3)
+        ) {
+            warn('Vue is a constructor and should be called with the `new` keyword');
+        }
         this._init(options);
     }
 
@@ -6461,12 +6527,15 @@
         console.error(("[Vue compiler]: " + msg));
     }
 
-    function pluckModuleFunction(modules, key) {
-        return modules ? modules.map(function (m) {
+    function pluckModuleFunction(modules,
+                                 key) {
+        return modules
+            ? modules.map(function (m) {
                 return m[key];
             }).filter(function (_) {
                 return _;
-            }) : []
+            })
+            : []
     }
 
     function addProp(el, name, value) {
@@ -6479,7 +6548,7 @@
         el.plain = false;
     }
 
-    // add a raw attr (use this in preTransforms)
+// add a raw attr (use this in preTransforms)
     function addRawAttr(el, name, value) {
         el.attrsMap[name] = value;
         el.attrsList.push({name: name, value: value});
@@ -8704,7 +8773,7 @@
         var re = shouldDecodeNewlines ? encodedAttrWithNewLines : encodedAttr;
         return value.replace(re, function (match) {
             return decodingMap[match];
-        });
+        })
     }
 
     function parseHTML(html, options) {
@@ -8720,14 +8789,12 @@
             if (!lastTag || !isPlainTextElement(lastTag)) {
                 var textEnd = html.indexOf('<');
                 if (textEnd === 0) {
-
-                    // 匹配是不是以<!--开头
+                    // Comment:
                     if (comment.test(html)) {
                         var commentEnd = html.indexOf('-->');
 
                         if (commentEnd >= 0) {
                             if (options.shouldKeepComment) {
-                                //注释部分
                                 options.comment(html.substring(4, commentEnd));
                             }
                             advance(commentEnd + 3);
@@ -8735,20 +8802,21 @@
                         }
                     }
 
-                    // 处理比如说<![CDATA["，结束于 "]]>这类标签
+                    // http://en.wikipedia.org/wiki/Conditional_comment#Downlevel-revealed_conditional_comment
                     if (conditionalComment.test(html)) {
                         var conditionalEnd = html.indexOf(']>');
+
                         if (conditionalEnd >= 0) {
                             advance(conditionalEnd + 2);
-                            continue;
+                            continue
                         }
                     }
 
-                    // doc文档类型
+                    // Doctype:
                     var doctypeMatch = html.match(doctype);
                     if (doctypeMatch) {
                         advance(doctypeMatch[0].length);
-                        continue;
+                        continue
                     }
 
                     // End tag:
@@ -8757,7 +8825,7 @@
                         var curIndex = index;
                         advance(endTagMatch[0].length);
                         parseEndTag(endTagMatch[1], curIndex, index);
-                        continue;
+                        continue
                     }
 
                     // Start tag:
@@ -8771,12 +8839,15 @@
                     }
                 }
 
-                var text,
-                    rest,//切除除标签外的文本剩余
-                    next;
+                var text = (void 0), rest = (void 0), next = (void 0);
                 if (textEnd >= 0) {
                     rest = html.slice(textEnd);
-                    while (!endTag.test(rest) && !startTagOpen.test(rest) && !comment.test(rest) && !conditionalComment.test(rest)) {
+                    while (
+                    !endTag.test(rest) &&
+                    !startTagOpen.test(rest) &&
+                    !comment.test(rest) &&
+                    !conditionalComment.test(rest)
+                        ) {
                         // < in plain text, be forgiving and treat it as text
                         next = rest.indexOf('<', 1);
                         if (next < 0) {
@@ -8797,8 +8868,7 @@
                 if (options.chars && text) {
                     options.chars(text);
                 }
-            }
-            else {
+            } else {
                 var endTagLength = 0;
                 var stackedTag = lastTag.toLowerCase();
                 var reStackedTag = reCache[stackedTag] || (reCache[stackedTag] = new RegExp('([\\s\\S]*?)(</' + stackedTag + '[^>]*>)', 'i'));
@@ -8834,7 +8904,6 @@
         // Clean up any remaining tags
         parseEndTag();
 
-        //将匹配成功的html字串剔除
         function advance(n) {
             index += n;
             html = html.substring(n);
@@ -8978,7 +9047,7 @@
     var onRE = /^@|^v-on:/;
     var dirRE = /^v-|^@|^:/;
     var forAliasRE = /(.*?)\s+(?:in|of)\s+(.*)/;
-
+    var forIteratorRE = /,([^,\}\]]*)(?:,([^,\}\]]*))?$/;
     var stripParensRE = /^\(|\)$/g;
 
     var argRE = /:(.*)$/;
@@ -9014,7 +9083,8 @@
     /**
      * Convert HTML string to AST.
      */
-    function parse(template, options) {
+    function parse(template,
+                   options) {
         warn$2 = options.warn || baseWarn;
 
         platformIsPreTag = options.isPreTag || no;
@@ -9170,6 +9240,7 @@
                     closeElement(element);
                 }
             },
+
             end: function end() {
                 // remove trailing whitespace
                 var element = stack[stack.length - 1];
@@ -9182,6 +9253,7 @@
                 currentParent = stack[stack.length - 1];
                 closeElement(element);
             },
+
             chars: function chars(text) {
                 if (!currentParent) {
                     {
@@ -10722,7 +10794,8 @@
 // `createCompilerCreator` allows creating compilers that use alternative
 // parser/optimizer/codegen, e.g the SSR optimizing compiler.
 // Here we just export a default compiler using the default parts.
-    var createCompiler = createCompilerCreator(function baseCompile(template, options) {
+    var createCompiler = createCompilerCreator(function baseCompile(template,
+                                                                    options) {
         var ast = parse(template.trim(), options);
         if (options.optimize !== false) {
             optimize(ast, options);
@@ -10779,8 +10852,35 @@
         var options = this.$options;
         // resolve template/el and convert to render function
         if (!options.render) {
-            var template = getOuterHTML(el);
+            var template = options.template;
             if (template) {
+                if (typeof template === 'string') {
+                    if (template.charAt(0) === '#') {
+                        template = idToTemplate(template);
+                        /* istanbul ignore if */
+                        if ("development" !== 'production' && !template) {
+                            warn(
+                                ("Template element not found or is empty: " + (options.template)),
+                                this
+                            );
+                        }
+                    }
+                } else if (template.nodeType) {
+                    template = template.innerHTML;
+                } else {
+                    {
+                        warn('invalid template option:' + template, this);
+                    }
+                    return this
+                }
+            } else if (el) {
+                template = getOuterHTML(el);
+            }
+            if (template) {
+                /* istanbul ignore if */
+                if ("development" !== 'production' && config.performance && mark) {
+                    mark('compile');
+                }
 
                 var ref = compileToFunctions(template, {
                     shouldDecodeNewlines: shouldDecodeNewlines,
@@ -10788,7 +10888,6 @@
                     delimiters: options.delimiters,
                     comments: options.comments
                 }, this);
-
                 var render = ref.render;
                 var staticRenderFns = ref.staticRenderFns;
                 options.render = render;
