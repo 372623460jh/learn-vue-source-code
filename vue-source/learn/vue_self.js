@@ -104,12 +104,14 @@
     }
 
     /**
-     * Make a map and return a function for checking if a key
-     * is in that map.
+     * 将用逗号分开的自创装换为集合，返回用来判断传入字串是否属于该集合的方法
+     * @param str               生成集合的字串
+     * @param exceptsLowerCase  是否忽略大小写
+     * @returns {Function}
      */
     function makeMap(str,
                      expectsLowerCase) {
-        var map = Object.create(null);
+        var map = Object.create(null);//创建原始对象
         var list = str.split(',');
         for (var i = 0; i < list.length; i++) {
             map[list[i]] = true;
@@ -222,7 +224,10 @@
     }
 
     /**
-     * Mix properties into target object.
+     * 将_from中的属性（非原型链上）浅拷贝到to中
+     * @param to
+     * @param _from
+     * @returns {*}
      */
     function extend(to, _from) {
         for (var key in _from) {
@@ -497,13 +502,16 @@
 // can we use __proto__?
     var hasProto = '__proto__' in {};
 
-// Browser environment sniffing
+    // 判断是否在浏览器中
     var inBrowser = typeof window !== 'undefined';
     var inWeex = typeof WXEnvironment !== 'undefined' && !!WXEnvironment.platform;
     var weexPlatform = inWeex && WXEnvironment.platform.toLowerCase();
+    // 获取浏浏览器userAgent
     var UA = inBrowser && window.navigator.userAgent.toLowerCase();
+    // 通过userAgent判断是不是IE
     var isIE = UA && /msie|trident/.test(UA);
     var isIE9 = UA && UA.indexOf('msie 9.0') > 0;
+    // 通过userAgent判断是不是edge浏览器
     var isEdge = UA && UA.indexOf('edge/') > 0;
     var isAndroid = (UA && UA.indexOf('android') > 0) || (weexPlatform === 'android');
     var isIOS = (UA && /iphone|ipad|ipod|ios/.test(UA)) || (weexPlatform === 'ios');
@@ -5176,8 +5184,7 @@
         'content,element,shadow,template,blockquote,iframe,tfoot'
     );
 
-// this map is intentionally selective, only covering SVG elements that may
-// contain child elements.
+    // 是不是矢量标签
     var isSVG = makeMap(
         'svg,animate,circle,clippath,cursor,defs,desc,ellipse,filter,font-face,' +
         'foreignObject,g,glyph,image,line,marker,mask,missing-glyph,path,pattern,' +
@@ -5185,6 +5192,11 @@
         true
     );
 
+    /**
+     * 判断是不是pre标签
+     * @param tag 标签名字
+     * @returns {boolean}
+     */
     var isPreTag = function (tag) {
         return tag === 'pre';
     };
@@ -5193,12 +5205,17 @@
         return isHTMLTag(tag) || isSVG(tag)
     };
 
+    /**
+     * 特殊处理svg标签和MathML标签的命名空间
+     * @param tag
+     * @returns {*}
+     */
     function getTagNamespace(tag) {
+        // 如果是矢量标签放回svg
         if (isSVG(tag)) {
             return 'svg'
         }
-        // basic support for MathML
-        // note it doesn't support other MathML elements being component roots
+        // MathML只支持math作为root element
         if (tag === 'math') {
             return 'math'
         }
@@ -6395,93 +6412,127 @@
         update: updateClass
     };
 
-    /*  */
-
-    var validDivisionCharRE = /[\w).+\-_$\]]/;
-
+    /**
+     * 过滤器
+     * @param exp 属性字符串（:key='test'中的test）
+     * @return {*}
+     */
+    var validDivisionCharRE = /[\w).+\-_$\]]/;//匹配 A-Z a-z 0-9 _ ) . + - $ ]
     function parseFilters(exp) {
+        // 是否有未闭合的单引号
         var inSingle = false;
+        // 是否有未闭合的双引号
         var inDouble = false;
+        // 是不是es6模板语法
         var inTemplateString = false;
+        // 是否有未闭合的正则表达式
         var inRegex = false;
+        // 未闭合的左大括号出现次数
         var curly = 0;
+        // 未闭合的左中括号出现次数
         var square = 0;
+        // 未闭合的左小括号出现次数
         var paren = 0;
+        // |连接符右侧索引值（|连接符连接多个表达式）
         var lastFilterIndex = 0;
-        var c, prev, i, expression, filters;
+        var c,//当前字符
+            prev,//上一个字符
+            i,//当前字符索引值
+            expression,//第一个表达式
+            filters;//表达式栈
 
         for (i = 0; i < exp.length; i++) {
             prev = c;
+            // 获取字符的 Unicode 编码
             c = exp.charCodeAt(i);
             if (inSingle) {
+                //当前字符是'且上一个字符不是\转义符
                 if (c === 0x27 && prev !== 0x5C) {
+                    // 和上一个单引号形成闭合关系
                     inSingle = false;
                 }
             } else if (inDouble) {
+                //当前字符是"且上一个字符不是\转义符
                 if (c === 0x22 && prev !== 0x5C) {
+                    // 和上一个双引号形成闭合关系
                     inDouble = false;
                 }
             } else if (inTemplateString) {
+                //当前字符是`且上一个字符不是\转义符
                 if (c === 0x60 && prev !== 0x5C) {
+                    //es6模板语法形成闭合关系
                     inTemplateString = false;
                 }
             } else if (inRegex) {
+                //当前字符是/且上一个字符不是\转义符
                 if (c === 0x2f && prev !== 0x5C) {
+                    // 匹配正则表达式形成闭合关系
                     inRegex = false;
                 }
-            } else if (
-                c === 0x7C && // pipe
-                exp.charCodeAt(i + 1) !== 0x7C &&
-                exp.charCodeAt(i - 1) !== 0x7C &&
-                !curly && !square && !paren
-            ) {
+            } else if (c === 0x7C && exp.charCodeAt(i + 1) !== 0x7C && exp.charCodeAt(i - 1) !== 0x7C && !curly && !square && !paren) {
+                //当前字符是|且前后一个字符都不是| 并且不处于非闭合的([{中
                 if (expression === undefined) {
-                    // first filter, end of expression
+                    // 下一个表达式的开始位置
                     lastFilterIndex = i + 1;
+                    // 第一个表达式
                     expression = exp.slice(0, i).trim();
                 } else {
+                    // 下一个
                     pushFilter();
                 }
             } else {
                 switch (c) {
+                    // " 匹配双引号
                     case 0x22:
                         inDouble = true;
-                        break         // "
+                        break
+                    // ' 匹配当引号
                     case 0x27:
                         inSingle = true;
-                        break         // '
+                        break
+                    // ` 匹配es6模板符号
                     case 0x60:
                         inTemplateString = true;
-                        break // `
+                        break
+                    // ( 匹配左括号
                     case 0x28:
                         paren++;
-                        break                 // (
+                        break
+                    // ) 匹配右括号
                     case 0x29:
                         paren--;
-                        break                 // )
+                        break
+                    // [ 匹配左中括号
                     case 0x5B:
                         square++;
-                        break                // [
+                        break
+                    // ] 匹配右中括号
                     case 0x5D:
                         square--;
-                        break                // ]
+                        break
+                    // { 匹配左花括号
                     case 0x7B:
                         curly++;
-                        break                 // {
+                        break
+                    // } 匹配右花括号
                     case 0x7D:
                         curly--;
-                        break                 // }
+                        break
                 }
-                if (c === 0x2f) { // /
-                    var j = i - 1;
+                // 匹配正则表达式
+                if (c === 0x2f) {
+                    // 当前字符是/
+                    var j = i - 1;//前一个字符索引
                     var p = (void 0);
-                    // find first non-whitespace prev char
+                    // 查找字符/前第一个不是空格的字符
                     for (; j >= 0; j--) {
                         p = exp.charAt(j);
                         if (p !== ' ') {
+                            // 字符/前第一个不是' '的字符
                             break
                         }
                     }
+                    // 如果/前全是空格或者不是A-Z a-z 0-9 _ ) . + - $ ]字符
                     if (!p || !validDivisionCharRE.test(p)) {
                         inRegex = true;
                     }
@@ -6490,12 +6541,16 @@
         }
 
         if (expression === undefined) {
+            // 就一个表达式
             expression = exp.slice(0, i).trim();
         } else if (lastFilterIndex !== 0) {
+            // 多个表达式入栈最后一个表达式
             pushFilter();
         }
 
+        // 将用|分割的表达式压入filters栈中
         function pushFilter() {
+            // 将表达式压入filters栈中
             (filters || (filters = [])).push(exp.slice(lastFilterIndex, i).trim());
             lastFilterIndex = i + 1;
         }
@@ -6642,9 +6697,15 @@
         el.plain = false;
     }
 
-    function getBindingAttr(el,
-                            name,
-                            getStatic) {
+    /**
+     * 获取绑定的属性（如:key指令或bind:key指令）
+     * @param el                虚拟dom
+     * @param name              绑定的属性
+     * @param getStatic         是否去属性中取（当属性!false时去属性中直接取name）
+     * @return {*}
+     */
+    function getBindingAttr(el, name, getStatic) {
+        // 获取虚拟dom中有没有:[name]之类的指令或是v-bind:[name]之类的指令
         var dynamicValue =
             getAndRemoveAttr(el, ':' + name) ||
             getAndRemoveAttr(el, 'v-bind:' + name);
@@ -6653,18 +6714,20 @@
         } else if (getStatic !== false) {
             var staticValue = getAndRemoveAttr(el, name);
             if (staticValue != null) {
+                //将静态属性值返回如"{"key":"zhangsan"}"
                 return JSON.stringify(staticValue)
             }
         }
     }
 
-// note: this only removes the attr from the Array (attrsList) so that it
-// doesn't get processed by processAttrs.
-// By default it does NOT remove it from the map (attrsMap) because the map is
-// needed during codegen.
-    function getAndRemoveAttr(el,
-                              name,
-                              removeFromMap) {
+    /**
+     * 移除并返回虚拟dom中的指定属性
+     * @param el                 虚拟dom
+     * @param name               属性名
+     * @param removeFromMap      是否从map中移除（虚拟属性中的dom有两个属性集合一个是attrsMap,一个是数组attrsList）
+     * @returns {*}
+     */
+    function getAndRemoveAttr(el, name, removeFromMap) {
         var val;
         if ((val = el.attrsMap[name]) != null) {
             var list = el.attrsList;
@@ -8565,8 +8628,7 @@
     });
 
 
-    function parseText(text,
-                       delimiters) {
+    function parseText(text, delimiters) {
         var tagRE = delimiters ? buildRegex(delimiters) : defaultTagRE;
         if (!tagRE.test(text)) {
             return
@@ -8636,7 +8698,7 @@
 
     var klass$1 = {
         staticKeys: ['staticClass'],
-        transformNode: transformNode,
+        transformNode: transformNode,//处理class
         genData: genData
     };
 
@@ -8680,7 +8742,7 @@
 
     var style$1 = {
         staticKeys: ['staticStyle'],
-        transformNode: transformNode$1,
+        transformNode: transformNode$1,//处理style
         genData: genData$1
     };
 
@@ -8696,21 +8758,19 @@
         }
     };
 
-    /*  */
-
+    // 自闭合的元素，结尾不需要斜线
+    // 如<link rel="stylesheet" href="a.css">
     var isUnaryTag = makeMap(
         'area,base,br,col,embed,frame,hr,img,input,isindex,keygen,' +
         'link,meta,param,source,track,wbr'
     );
 
-// Elements that you can, intentionally, leave open
-// (and which close themselves)
+    // 可忽略的自闭合元素
     var canBeLeftOpenTag = makeMap(
         'colgroup,dd,dt,li,options,p,td,tfoot,th,thead,tr,source'
     );
 
-// HTML5 tags https://html.spec.whatwg.org/multipage/indices.html#elements-3
-// Phrasing Content https://html.spec.whatwg.org/multipage/dom.html#phrasing-content
+    // 段落元素
     var isNonPhrasingTag = makeMap(
         'address,article,aside,base,blockquote,body,caption,col,colgroup,dd,' +
         'details,dialog,div,dl,dt,fieldset,figcaption,figure,footer,form,' +
@@ -8730,28 +8790,41 @@
      * http://erik.eae.net/simplehtmlparser/simplehtmlparser.js
      */
 
-// Regular Expressions for parsing tags and attributes
+    // 匹配出dom字串中的所有属性 class="test"
     var attribute = /^\s*([^\s"'<>\/=]+)(?:\s*(=)\s*(?:"([^"]*)"+|'([^']*)'+|([^\s"'=<>`]+)))?/;
-// could use https://www.w3.org/TR/1999/REC-xml-names-19990114/#NT-QName
-// but for Vue templates we can enforce a simple charset
+    // could use https://www.w3.org/TR/1999/REC-xml-names-19990114/#NT-QName
+    // but for Vue templates we can enforce a simple charset
     var ncname = '[a-zA-Z_][\\w\\-\\.]*';
     var qnameCapture = "((?:" + ncname + "\\:)?" + ncname + ")";
+    // 匹配出dom字串中开头的标签名 <div></div>中的<div
     var startTagOpen = new RegExp(("^<" + qnameCapture));
+    // 匹配出dom字符串的结尾 <img/>中的/>
     var startTagClose = /^\s*(\/?)>/;
+    // 匹配结束标签 <div></div>中的</div>
     var endTag = new RegExp(("^<\\/" + qnameCapture + "[^>]*>"));
+    // 匹配DOCTYPE标签 <!DOCTYPE html>
     var doctype = /^<!DOCTYPE [^>]+>/i;
+    // 匹配注释注释开头 <!--
     var comment = /^<!--/;
+    // 匹配<![
     var conditionalComment = /^<!\[/;
 
+    // 解决正则表达式bug
     var IS_REGEX_CAPTURING_BROKEN = false;
     'x'.replace(/x(.)?/g, function (m, g) {
         IS_REGEX_CAPTURING_BROKEN = g === '';
     });
 
-// Special Elements (can contain anything)
+    // script,style,textarea标签
     var isPlainTextElement = makeMap('script,style,textarea', true);
     var reCache = {};
 
+    /**
+     * 给属性中的以下字符进行解码
+     * @param value
+     * @param shouldDecodeNewlines
+     * @returns {void|*|string|XML}
+     */
     var decodingMap = {
         '&lt;': '<',
         '&gt;': '>',
@@ -8763,7 +8836,7 @@
     var encodedAttr = /&(?:lt|gt|quot|amp);/g;
     var encodedAttrWithNewLines = /&(?:lt|gt|quot|amp|#10|#9);/g;
 
-// #5992
+    // 处理pre,textarea标签下有\n导致pre,textarea内容换号的bug
     var isIgnoreNewlineTag = makeMap('pre,textarea', true);
     var shouldIgnoreFirstNewline = function (tag, html) {
         return tag && isIgnoreNewlineTag(tag) && html[0] === '\n';
@@ -8776,50 +8849,55 @@
         })
     }
 
+    /**
+     * 将html字符串解析为AST （将html解析为虚拟dom）
+     */
     function parseHTML(html, options) {
-        var stack = [];
+        var stack = [];//保存还未找到闭合的元素的栈
         var expectHTML = options.expectHTML;
         var isUnaryTag$$1 = options.isUnaryTag || no;
         var canBeLeftOpenTag$$1 = options.canBeLeftOpenTag || no;
-        var index = 0;
-        var last, lastTag;
+        var index = 0;// 字符切割游标（当前字符是原字符串切割到了第几位留下的）
+        var last,// 截取前剩余html字符串
+            lastTag;// 上一个匹配到的标签,处理stack后会被重写复制lastTag永远指向栈顶元素
         while (html) {
             last = html;
-            // Make sure we're not in a plaintext content element like script/style
+            // 没有父标签 或 父标签不是script,style,textare特殊标签
             if (!lastTag || !isPlainTextElement(lastTag)) {
                 var textEnd = html.indexOf('<');
+                // 检查元素标签开始符前是否有其他文本
                 if (textEnd === 0) {
-                    // Comment:
+                    // 匹配注释
                     if (comment.test(html)) {
                         var commentEnd = html.indexOf('-->');
-
                         if (commentEnd >= 0) {
                             if (options.shouldKeepComment) {
+                                //截取注释部分
                                 options.comment(html.substring(4, commentEnd));
                             }
+                            // 将注释从html中剔除
                             advance(commentEnd + 3);
                             continue
                         }
                     }
 
-                    // http://en.wikipedia.org/wiki/Conditional_comment#Downlevel-revealed_conditional_comment
+                    // 处理比如说<![CDATA["，结束于 "]]>这类标签
                     if (conditionalComment.test(html)) {
                         var conditionalEnd = html.indexOf(']>');
-
                         if (conditionalEnd >= 0) {
                             advance(conditionalEnd + 2);
                             continue
                         }
                     }
 
-                    // Doctype:
+                    // 处理DOCTYPE标签如 <!DOCTYPE html>
                     var doctypeMatch = html.match(doctype);
                     if (doctypeMatch) {
                         advance(doctypeMatch[0].length);
                         continue
                     }
 
-                    // End tag:
+                    // 匹配结束标签 <div></div>中的</div>
                     var endTagMatch = html.match(endTag);
                     if (endTagMatch) {
                         var curIndex = index;
@@ -8828,29 +8906,32 @@
                         continue
                     }
 
-                    // Start tag:
+                    // 标签开头
                     var startTagMatch = parseStartTag();
                     if (startTagMatch) {
+                        // 根据匹配结果生成匹配节点的AST对象
                         handleStartTag(startTagMatch);
                         if (shouldIgnoreFirstNewline(lastTag, html)) {
+                            // pre,textarea元素内第一个\n换行符,将换行符替换掉,
+                            // 解决textarea,pre多空行bug
                             advance(1);
                         }
                         continue
                     }
                 }
 
-                var text = (void 0), rest = (void 0), next = (void 0);
+                var text = (void 0),//标签中的文本
+                    rest = (void 0),//切除除标签外的文本剩余
+                    next = (void 0);//文本中下一个<的索引用于检查<是否有用
+
+                //处理html字串text标签中含有<的
                 if (textEnd >= 0) {
                     rest = html.slice(textEnd);
-                    while (
-                    !endTag.test(rest) &&
-                    !startTagOpen.test(rest) &&
-                    !comment.test(rest) &&
-                    !conditionalComment.test(rest)
-                        ) {
-                        // < in plain text, be forgiving and treat it as text
+                    while (!endTag.test(rest) && !startTagOpen.test(rest) && !comment.test(rest) && !conditionalComment.test(rest)) {
+                        // <后没有任何标签 <得当做text标签处理
                         next = rest.indexOf('<', 1);
                         if (next < 0) {
+                            // <之后没有<
                             break
                         }
                         textEnd += next;
@@ -8860,15 +8941,18 @@
                     advance(textEnd);
                 }
 
+                // 剩余文本中没找到<全部当做text标签处理
                 if (textEnd < 0) {
                     text = html;
                     html = '';
                 }
 
+                //调用处理text标签的方法
                 if (options.chars && text) {
                     options.chars(text);
                 }
             } else {
+                // 父标签是script,style,textare特殊标签
                 var endTagLength = 0;
                 var stackedTag = lastTag.toLowerCase();
                 var reStackedTag = reCache[stackedTag] || (reCache[stackedTag] = new RegExp('([\\s\\S]*?)(</' + stackedTag + '[^>]*>)', 'i'));
@@ -8893,6 +8977,7 @@
             }
 
             if (html === last) {
+                // html是匹配后的 last是匹配前的 匹配前后数据没发生改变（死循环） 就当做text标签处理
                 options.chars && options.chars(html);
                 if ("development" !== 'production' && !stack.length && options.warn) {
                     options.warn(("Mal-formatted tag at end of template: \"" + html + "\""));
@@ -8901,57 +8986,78 @@
             }
         }
 
-        // Clean up any remaining tags
+        // 匹配结束调用一次清除stack中剩余的标签
         parseEndTag();
 
+        //将匹配成功的html字串剔除
         function advance(n) {
             index += n;
             html = html.substring(n);
         }
 
+        //解析出元素标识(完整的标签开头)
         function parseStartTag() {
+            // 匹配节点的tag如<div></div>匹配开头的<div中的div
             var start = html.match(startTagOpen);
             if (start) {
+                // 匹配结果对象
                 var match = {
-                    tagName: start[1],
-                    attrs: [],
-                    start: index
+                    tagName: start[1],//标签名
+                    attrs: [], // 属性数组
+                    start: index// 标签字符串开始位置
                 };
+                // 截取匹配后的字符串
                 advance(start[0].length);
                 var end, attr;
+                // startTagClose查询tag的关闭符号如<div></div>查找出<div>中的>
+                // attribute查询所有属性如<div class='test'></div>查找出class='test'
+                // 当匹配到标签的>时终止
                 while (!(end = html.match(startTagClose)) && (attr = html.match(attribute))) {
+                    // 从html中剔除掉匹配到的属性
                     advance(attr[0].length);
                     match.attrs.push(attr);
                 }
                 if (end) {
+                    // unarySlash为标签结束符>之前，属性之后的值如<div class='test' jiji></div> unarySlash就为jiji
                     match.unarySlash = end[1];
                     advance(end[0].length);
-                    match.end = index;
+                    // end为标签的长度
+                    match.end = index;//标签长度
                     return match
                 }
             }
         }
 
+        /**
+         * 标签字串开头的生成AXT的方法
+         * @param match 匹配结果
+         */
         function handleStartTag(match) {
             var tagName = match.tagName;
             var unarySlash = match.unarySlash;
-
             if (expectHTML) {
+                // 如果是段落元素
                 if (lastTag === 'p' && isNonPhrasingTag(tagName)) {
+                    //如果父元素是p元素并且子元素是一个段落元素
+                    //用来处理以p父元素中包含段落元素如：
+                    //<p><h1></h1><h2><h2></p> 会被解析为4个并列的元素(p,h1,h2,p)
                     parseEndTag(lastTag);
                 }
+                // 判断是不是可省略的闭合标签
                 if (canBeLeftOpenTag$$1(tagName) && lastTag === tagName) {
+                    // 用来处理连续出现的两个可忽略闭合元素如：
+                    // <li><li>
                     parseEndTag(tagName);
                 }
             }
-
+            // 自闭合标签如img，link 判断如果是自闭合标签或者存在unarySlash返回true
             var unary = isUnaryTag$$1(tagName) || !!unarySlash;
-
+            // 处理属性
             var l = match.attrs.length;
             var attrs = new Array(l);
             for (var i = 0; i < l; i++) {
                 var args = match.attrs[i];
-                // hackish work around FF bug https://bugzilla.mozilla.org/show_bug.cgi?id=369778
+                // 处理正则表达式bug
                 if (IS_REGEX_CAPTURING_BROKEN && args[0].indexOf('""') === -1) {
                     if (args[3] === '') {
                         delete args[3];
@@ -8963,28 +9069,40 @@
                         delete args[5];
                     }
                 }
+                // 属性的值
                 var value = args[3] || args[4] || args[5] || '';
                 var shouldDecodeNewlines = tagName === 'a' && args[1] === 'href'
                     ? options.shouldDecodeNewlinesForHref
                     : options.shouldDecodeNewlines;
                 attrs[i] = {
-                    name: args[1],
-                    value: decodeAttr(value, shouldDecodeNewlines)
+                    name: args[1],//属性名
+                    value: decodeAttr(value, shouldDecodeNewlines)//解码属性
                 };
             }
 
             if (!unary) {
+                //如果不是自闭合的标签往stack中压入已经检索完的AST对象
+                //包含标签名，小写标签名，属性数组里面是{属性名，值}的对象
                 stack.push({tag: tagName, lowerCasedTag: tagName.toLowerCase(), attrs: attrs});
+                //设置上衣个标签名为该标签名
                 lastTag = tagName;
             }
 
             if (options.start) {
+                //解析出一个AST对象 调用start回调方法 入参（节点名，属性数组，是否自闭合，开始位置，标签长度）
                 options.start(tagName, attrs, unary, match.start, match.end);
             }
         }
 
+        /**
+         * 解析标签结束
+         * @param tagName
+         * @param start
+         * @param end
+         */
         function parseEndTag(tagName, start, end) {
-            var pos, lowerCasedTagName;
+            var pos,// 从后向前查找stack中第一个能和结束标签tagName匹配的索引值
+                lowerCasedTagName;// tagName转为全小写用于和stack中元素的lowerCasedTag属性比对
             if (start == null) {
                 start = index;
             }
@@ -8996,42 +9114,44 @@
                 lowerCasedTagName = tagName.toLowerCase();
             }
 
-            // Find the closest opened tag of the same type
             if (tagName) {
+                // 查找结束标签对应的stack中索引值
                 for (pos = stack.length - 1; pos >= 0; pos--) {
                     if (stack[pos].lowerCasedTag === lowerCasedTagName) {
                         break
                     }
                 }
             } else {
-                // If no tag name is provided, clean shop
+                // 如果未传入结束标签名
                 pos = 0;
             }
 
             if (pos >= 0) {
-                // Close all the open elements, up the stack
+                // 在栈中找到了对应的闭合元素
                 for (var i = stack.length - 1; i >= pos; i--) {
-                    if ("development" !== 'production' &&
-                        (i > pos || !tagName) &&
-                        options.warn
-                    ) {
+                    if ("development" !== 'production' && (i > pos || !tagName) && options.warn) {
+                        //没有匹配到结束标签
                         options.warn(
                             ("tag <" + (stack[i].tag) + "> has no matching end tag.")
                         );
                     }
                     if (options.end) {
+                        //执行查找到闭合元素的回调
                         options.end(stack[i].tag, start, end);
                     }
                 }
 
-                // Remove the open elements from the stack
+                // 把保存还未闭合节点的栈中出栈已闭合的
                 stack.length = pos;
+                // 设置当前最后
                 lastTag = pos && stack[pos - 1].tag;
             } else if (lowerCasedTagName === 'br') {
+                // 没在如果匹配到的是</br> 特殊处理
                 if (options.start) {
                     options.start(tagName, [], true, start, end);
                 }
             } else if (lowerCasedTagName === 'p') {
+                // 如果匹配到的是</p> 特殊处理
                 if (options.start) {
                     options.start(tagName, [], false, start, end);
                 }
@@ -9046,8 +9166,11 @@
 
     var onRE = /^@|^v-on:/;
     var dirRE = /^v-|^@|^:/;
+    // 匹配for指令中的in of关键字
     var forAliasRE = /(.*?)\s+(?:in|of)\s+(.*)/;
+    // 检测v-for中的索引值
     var forIteratorRE = /,([^,\}\]]*)(?:,([^,\}\]]*))?$/;
+    // 用于替换开头的（和结尾的）
     var stripParensRE = /^\(|\)$/g;
 
     var argRE = /:(.*)$/;
@@ -9067,31 +9190,36 @@
     var platformGetTagNamespace;
 
 
-    function createASTElement(tag,
-                              attrs,
-                              parent) {
+    /**
+     * 创建抽象语法树AST对象的方法（虚拟dom）
+     * @param tag       //标签名
+     * @param attrs     //属性名
+     * @param parent    //父节点
+     * @param ns        //命名空间
+     * @returns {{type: number, tag: *, attrsList: *, attrsMap: *, parent: *, children: Array}}
+     */
+    function createASTElement(tag, attrs, parent) {
         return {
-            type: 1,
-            tag: tag,
-            attrsList: attrs,
-            attrsMap: makeAttrsMap(attrs),
-            parent: parent,
-            children: []
+            type: 1,                        //标签类型（1是element节点）
+            tag: tag,                       //标签名
+            attrsList: attrs,               //标签属性数组
+            attrsMap: makeAttrsMap(attrs),  //标签属性集合
+            parent: parent,                 //父AST对象（父节点）
+            children: []                    //子AST对象数组（子节点集合）
         }
     }
 
     /**
-     * Convert HTML string to AST.
+     * 将html字串解析成AST
+     * @param template
      */
-    function parse(template,
-                   options) {
+    function parse(template, options) {
         warn$2 = options.warn || baseWarn;
-
         platformIsPreTag = options.isPreTag || no;
         platformMustUseProp = options.mustUseProp || no;
         platformGetTagNamespace = options.getTagNamespace || no;
-
         transforms = pluckModuleFunction(options.modules, 'transformNode');
+        // 预转换节点的方法集合
         preTransforms = pluckModuleFunction(options.modules, 'preTransformNode');
         postTransforms = pluckModuleFunction(options.modules, 'postTransformNode');
 
@@ -9100,8 +9228,11 @@
         var stack = [];
         var preserveWhitespace = options.preserveWhitespace !== false;
         var root;
+        // 父AST对象（父虚拟节点）
         var currentParent;
+        // 有没有v-pre属性
         var inVPre = false;
+        // 是不是pre标签
         var inPre = false;
         var warned = false;
 
@@ -9135,21 +9266,23 @@
             shouldDecodeNewlinesForHref: options.shouldDecodeNewlinesForHref,
             shouldKeepComment: options.comments,
             start: function start(tag, attrs, unary) {
-                // check namespace.
-                // inherit parent ns if there is one
+                // 参数：节点名，属性数组，是否自闭合，开始位置，标签长度
+                // 校验命名空间 如果有父标签则将命名空间设置为父标签的命名空间如果
+                // 没有父标签且标签是svg标签则将命名空间设置位svg,如果标签是MathML标签设置命名空间为math
                 var ns = (currentParent && currentParent.ns) || platformGetTagNamespace(tag);
 
-                // handle IE svg bug
-                /* istanbul ignore if */
+                // 特殊处理在IE下svg标签属性名的兼容bug
                 if (isIE && ns === 'svg') {
                     attrs = guardIESVGBug(attrs);
                 }
 
+                // 创建AST对象(虚拟dom）
                 var element = createASTElement(tag, attrs, currentParent);
                 if (ns) {
                     element.ns = ns;
                 }
 
+                // 过滤模板中的script和style标签
                 if (isForbiddenTag(element) && !isServerRendering()) {
                     element.forbidden = true;
                     "development" !== 'production' && warn$2(
@@ -9159,24 +9292,28 @@
                     );
                 }
 
-                // apply pre-transforms
+                // 使用预处理集合中的方法对虚拟dom进行预处理
                 for (var i = 0; i < preTransforms.length; i++) {
                     element = preTransforms[i](element, options) || element;
                 }
 
+                // 初始化pre属性
                 if (!inVPre) {
                     processPre(element);
                     if (element.pre) {
                         inVPre = true;
                     }
                 }
+
+                // 初始化inPre属性
                 if (platformIsPreTag(element.tag)) {
                     inPre = true;
                 }
+
                 if (inVPre) {
                     processRawAttrs(element);
                 } else if (!element.processed) {
-                    // structural directives
+                    //如果该虚拟节点没有被处理过，处理其if for once指令
                     processFor(element);
                     processIf(element);
                     processOnce(element);
@@ -9184,6 +9321,7 @@
                     processElement(element, options);
                 }
 
+                // 校验根节点不能为slot，template和含有v-for的元素
                 function checkRootConstraints(el) {
                     {
                         if (el.tag === 'slot' || el.tag === 'template') {
@@ -9203,12 +9341,17 @@
 
                 // tree management
                 if (!root) {
+                    // 当前vdom是根节点
                     root = element;
+                    // 校验根节点的合法性
                     checkRootConstraints(root);
                 } else if (!stack.length) {
-                    // allow root elements with v-if, v-else-if and v-else
+                    //没有未闭合的元素
                     if (root.if && (element.elseif || element.else)) {
+                        // 根vdom有if指令 当前vdom有elseif指令或else指令 是根元素的同级元素并和根vdom的if指令形成对应
+                        // 校验根节点的合法性
                         checkRootConstraints(element);
+                        // 给根节点添加elseif表达式和表达式对应的vdom
                         addIfCondition(root, {
                             exp: element.elseif,
                             block: element
@@ -9222,26 +9365,32 @@
                     }
                 }
                 if (currentParent && !element.forbidden) {
+                    //如果当前vdom有父元素 且当前元素不是script和style标签
                     if (element.elseif || element.else) {
+                        // 当前元素有else或者elseif指令（需要找到和当前vdom同级的含有v-if的vdom将当前元素的else或elseif表达式加入ifConditions栈中）
                         processIfConditions(element, currentParent);
                     } else if (element.slotScope) { // scoped slot
                         currentParent.plain = false;
                         var name = element.slotTarget || '"default"';
                         (currentParent.scopedSlots || (currentParent.scopedSlots = {}))[name] = element;
                     } else {
+                        // 将当前vdom压入父vdom栈中
                         currentParent.children.push(element);
+                        // 设置当前vdom的父vdom属性
                         element.parent = currentParent;
                     }
                 }
                 if (!unary) {
-                    currentParent = element;
-                    stack.push(element);
+                    // 不是自闭和元素
+                    currentParent = element;//当前元素为下一个vdom的父元素
+                    stack.push(element);//将当前还未闭合的元素压栈
                 } else {
+                    // 如果是自闭和元素 闭合当前vdom
                     closeElement(element);
                 }
             },
-
             end: function end() {
+                // 匹配到一个元素结尾，就执行一次end回调
                 // remove trailing whitespace
                 var element = stack[stack.length - 1];
                 var lastNode = element.children[element.children.length - 1];
@@ -9253,8 +9402,9 @@
                 currentParent = stack[stack.length - 1];
                 closeElement(element);
             },
-
             chars: function chars(text) {
+                // 参数：text标签文本
+                // 处理text标签匹配到text标签会回调
                 if (!currentParent) {
                     {
                         if (text === template) {
@@ -9300,6 +9450,8 @@
                 }
             },
             comment: function comment(text) {
+                // 参数：注释内容
+                // 处理注释的回调
                 currentParent.children.push({
                     type: 3,
                     text: text,
@@ -9310,12 +9462,21 @@
         return root
     }
 
+    /**
+     * 处理v-pre指令，给虚拟dom增加pre属性并移除attrsMap的v-pre属性
+     * @param el
+     */
     function processPre(el) {
         if (getAndRemoveAttr(el, 'v-pre') != null) {
             el.pre = true;
         }
     }
 
+    /**
+     * 处理未加工的属性
+     * 给虚拟dom增加了attrs属性该属性是深拷贝了attrsList（未被加工的属性）
+     * @param el
+     */
     function processRawAttrs(el) {
         var l = el.attrsList.length;
         if (l) {
@@ -9327,27 +9488,38 @@
                 };
             }
         } else if (!el.pre) {
-            // non root node in pre blocks with no attributes
+            // 没有未处理属性且没有v-pre属性，给虚拟dom增加一个plain属性（基本标签）
             el.plain = true;
         }
     }
 
     function processElement(element, options) {
+        // 处理bind:key指令
         processKey(element);
 
-        // determine whether this is a plain element after
-        // removing structural attributes
+        // 没有key属性且没有其他属性为基本标签
         element.plain = !element.key && !element.attrsList.length;
 
+        // 处理bind:ref指令
         processRef(element);
+
+        // 处理slot标签的bind:name指令
         processSlot(element);
+
+        // 处理slot标签的bind:is指令
         processComponent(element);
+
         for (var i = 0; i < transforms.length; i++) {
             element = transforms[i](element, options) || element;
         }
+
         processAttrs(element);
     }
 
+    /**
+     * 处理:key指令和bind:key指令,有该指令的话返回指令中的内容
+     * @param el
+     */
     function processKey(el) {
         var exp = getBindingAttr(el, 'key');
         if (exp) {
@@ -9366,11 +9538,21 @@
         }
     }
 
+    //===========================for指令解析（开始）===========================
+    /**
+     * 解析for指令到虚拟dom对象中（增加for指令相关的属性）
+     * @param el
+     */
     function processFor(el) {
         var exp;
         if ((exp = getAndRemoveAttr(el, 'v-for'))) {
             var res = parseFor(exp);
             if (res) {
+                // 将for指令解析出来的属性挂载到虚拟dom对象上
+                // for:被循环对象（data）
+                // alias：从被循环对象循环出来的（item，有该属性无iterator1，iterator2）
+                // iterator1属性对应有索引的value（有该属性无alias）
+                // iterator2属性对应有索引的key（有该属性无alias）
                 extend(el, res);
             } else {
                 warn$2(
@@ -9380,28 +9562,55 @@
         }
     }
 
+    /**
+     * 解析for指令详细方法
+     * @param exp
+     * @returns {{}}
+     */
     function parseFor(exp) {
+        // 匹配for指令中的in of关键字
         var inMatch = exp.match(forAliasRE);
         if (!inMatch) {
             return
         }
+        // 结果对象
         var res = {};
+        // v-for='item in data'
+        // for属性是被循环对象名（data）
         res.for = inMatch[2].trim();
+        // alias是从被循环对象循环出来的（item）
         var alias = inMatch[1].trim().replace(stripParensRE, '');
+        // v-for="(value, key) in object"
+        // 检索出索引值
         var iteratorMatch = alias.match(forIteratorRE);
         if (iteratorMatch) {
+            // 存在索引值
             res.alias = alias.replace(forIteratorRE, '');
+            // iterator1属性对应上面的value
             res.iterator1 = iteratorMatch[1].trim();
             if (iteratorMatch[2]) {
+                // iterator2属性对应上面的key也就是索引值
                 res.iterator2 = iteratorMatch[2].trim();
             }
         } else {
+            // 如果没有索引值alias属性就对应item
             res.alias = alias;
         }
         return res
     }
 
+    //===========================for指令解析（结束）===========================
+
+    //===========================if指令解析（开始）============================
+    /**
+     * 解析if指令到虚拟dom对象中（增加if指令相关的属性）
+     * if：v-if指令中的内容
+     * else：是否有v-else指令
+     * elseif：v-else-if指令中的内容
+     * @param el
+     */
     function processIf(el) {
+        // 获取虚拟dom是否有v-if属性
         var exp = getAndRemoveAttr(el, 'v-if');
         if (exp) {
             el.if = exp;
@@ -9410,9 +9619,11 @@
                 block: el
             });
         } else {
+            // 获取虚拟dom是否有v-else属性
             if (getAndRemoveAttr(el, 'v-else') != null) {
                 el.else = true;
             }
+            // 获取虚拟dom是否有v-else-if属性
             var elseif = getAndRemoveAttr(el, 'v-else-if');
             if (elseif) {
                 el.elseif = elseif;
@@ -9420,9 +9631,16 @@
         }
     }
 
+    /**
+     * 查找el元素同级前一个元素是否有v-if指令
+     * @param el                含有else或elseif的元素
+     * @param parent            含有else或elseif的元素的父元素
+     */
     function processIfConditions(el, parent) {
+        // 查找同级前一个vdom.type == 1的兄弟元素
         var prev = findPrevElement(parent.children);
         if (prev && prev.if) {
+            //将当前元素的else或elseif表达式加入含v-if指令的ifConditions栈中
             addIfCondition(prev, {
                 exp: el.elseif,
                 block: el
@@ -9435,6 +9653,11 @@
         }
     }
 
+    /**
+     * 查找并返回children数组中从右向左第一个type===1的元素(忽略if和else或elseif之间的内容为空的text元素)
+     * @param children
+     * @return {*}
+     */
     function findPrevElement(children) {
         var i = children.length;
         while (i--) {
@@ -9442,29 +9665,47 @@
                 return children[i]
             } else {
                 if ("development" !== 'production' && children[i].text !== ' ') {
+                    // v-if 和 else或elseif之间夹着一个有内容的非element元素
                     warn$2(
                         "text \"" + (children[i].text.trim()) + "\" between v-if and v-else(-if) " +
                         "will be ignored."
                     );
                 }
+                //出栈
                 children.pop();
             }
         }
     }
 
+    /**
+     * 在虚拟dom中添加if指令栈ifConditions属性
+     * @param el
+     * @param condition
+     */
     function addIfCondition(el, condition) {
         if (!el.ifConditions) {
             el.ifConditions = [];
         }
+        //将{exp:if指令中的内容,block:对应的虚拟dom}压栈
         el.ifConditions.push(condition);
     }
 
+    //===========================if指令解析（结束）============================
+
+    //===========================once指令解析（开始）==========================
+    /**
+     * 解析once指令到虚拟dom对象中（增加once指令相关的属性）
+     * once：是否有v-once指令
+     * @param el
+     */
     function processOnce(el) {
         var once$$1 = getAndRemoveAttr(el, 'v-once');
         if (once$$1 != null) {
             el.once = true;
         }
     }
+
+    //===========================once指令解析（结束）==========================
 
     function processSlot(el) {
         if (el.tag === 'slot') {
@@ -9632,9 +9873,16 @@
         }
     }
 
+    /**
+     * 通过数组创建属性集合(把元素的属性数组转为对象)
+     * 将[{naem:'class',value:'test'}{id:'id',value:'id1'}]  ===>   {class:'test',id:'id1'}
+     * @param attrs 属性数组
+     * @returns {{}}
+     */
     function makeAttrsMap(attrs) {
         var map = {};
         for (var i = 0, l = attrs.length; i < l; i++) {
+            //是否是重复属性（IE和Edge忽略此判断）
             if (
                 "development" !== 'production' &&
                 map[attrs[i].name] && !isIE && !isEdge
@@ -9651,6 +9899,14 @@
         return el.tag === 'script' || el.tag === 'style'
     }
 
+    /**
+     * 判断虚拟dom对象是不是style标签,或是没有type属性的script或时type='text/javascript'的script标签
+     * <style></style>
+     * <script></script>
+     * <script type='text/javascript'></script>
+     * @param el
+     * @returns {boolean}
+     */
     function isForbiddenTag(el) {
         return (
             el.tag === 'style' ||
@@ -9661,10 +9917,14 @@
         )
     }
 
+    /**
+     * 解决IE下svg标签bug
+     * @param tag
+     * @returns {*}
+     */
     var ieNSBug = /^xmlns:NS\d+/;
     var ieNSPrefix = /^NS\d+:/;
 
-    /* istanbul ignore next */
     function guardIESVGBug(attrs) {
         var res = [];
         for (var i = 0; i < attrs.length; i++) {

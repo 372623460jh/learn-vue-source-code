@@ -9045,13 +9045,16 @@
     /*  */
 
     var onRE = /^@|^v-on:/;
+    // 匹配属性名开头是否是v-或@或:
     var dirRE = /^v-|^@|^:/;
     var forAliasRE = /(.*?)\s+(?:in|of)\s+(.*)/;
     var forIteratorRE = /,([^,\}\]]*)(?:,([^,\}\]]*))?$/;
     var stripParensRE = /^\(|\)$/g;
 
     var argRE = /:(.*)$/;
+    // 匹配属性名开头是否是v-bind:或:
     var bindRE = /^:|^v-bind:/;
+    // 匹配.连接符如（goods.type.name）匹配出.type和.name
     var modifierRE = /\.[^.]+/g;
 
     var decodeHTMLCached = cached(he.decode);
@@ -9332,6 +9335,11 @@
         }
     }
 
+    /**
+     * 处理vdom
+     * @param element
+     * @param options
+     */
     function processElement(element, options) {
         processKey(element);
 
@@ -9343,6 +9351,7 @@
         processSlot(element);
         processComponent(element);
         for (var i = 0; i < transforms.length; i++) {
+            // 调用transforms来处理style和class
             element = transforms[i](element, options) || element;
         }
         processAttrs(element);
@@ -9525,21 +9534,29 @@
         }
     }
 
+    /**
+     * 处理属性
+     * @param el            vdom
+     */
     function processAttrs(el) {
         var list = el.attrsList;
         var i, l, name, rawName, value, modifiers, isProp;
         for (i = 0, l = list.length; i < l; i++) {
+            // 属性名
             name = rawName = list[i].name;
+            // 对应的值
             value = list[i].value;
             if (dirRE.test(name)) {
-                // mark element as dynamic
+                // 属性名开头是否以v-或@或:开头
                 el.hasBindings = true;
-                // modifiers
+                // 解析属性名中的.生成对象
                 modifiers = parseModifiers(name);
                 if (modifiers) {
+                    // 将:goods.type.name 替换为:goods
                     name = name.replace(modifierRE, '');
                 }
-                if (bindRE.test(name)) { // v-bind
+                if (bindRE.test(name)) {
+                    // 处理v-bind 将 v-bind:goods => goods
                     name = name.replace(bindRE, '');
                     value = parseFilters(value);
                     isProp = false;
@@ -9621,6 +9638,11 @@
         return false
     }
 
+    /**
+     * 匹配.连接符 goods.type.name => {type:true,name:true}
+     * @param name         表达式
+     * @return {{}}
+     */
     function parseModifiers(name) {
         var match = name.match(modifierRE);
         if (match) {
@@ -10794,8 +10816,7 @@
 // `createCompilerCreator` allows creating compilers that use alternative
 // parser/optimizer/codegen, e.g the SSR optimizing compiler.
 // Here we just export a default compiler using the default parts.
-    var createCompiler = createCompilerCreator(function baseCompile(template,
-                                                                    options) {
+    var createCompiler = createCompilerCreator(function baseCompile(template, options) {
         var ast = parse(template.trim(), options);
         if (options.optimize !== false) {
             optimize(ast, options);
