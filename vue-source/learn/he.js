@@ -1065,7 +1065,7 @@
             isUnaryTag: isUnaryTag,
             canBeLeftOpenTag: canBeLeftOpenTag,
             start: function start(tag, attrs, unary, start, end) {
-                console.log("匹配到标签开始 " + tag);
+                // console.log("匹配到标签开始 " + tag);
                 // 参数：节点名，属性数组，是否自闭合，开始位置，标签长度
                 // 校验命名空间 如果有父标签则将命名空间设置为父标签的命名空间如果
                 // 没有父标签且标签是svg标签则将命名空间设置位svg,如果标签是MathML标签设置命名空间为math
@@ -1146,7 +1146,7 @@
             },
             end: function end() {
                 // 匹配到一个元素结尾，就执行一次end回调
-                console.log("匹配到标签结束 " + arguments[0]);
+                // console.log("匹配到标签结束 " + arguments[0]);
                 // 取出未闭合栈顶元素
                 var element = stack[stack.length - 1];
                 // 设置未闭合栈顶vdom的子元素中的最后一个vdom为lastNode
@@ -1163,7 +1163,7 @@
                 // 参数：text标签文本
                 // 处理text标签匹配到text标签会回调 如果文本中含有模板占位符就创建一个2类型的vdom
                 // 如果是一个纯文本就创建一个3类型的纯文本vdom
-                console.log("匹配到文本标签 " + text);
+                // console.log("匹配到文本标签 " + text);
                 if (!currentParent) {
                     //文本没有父元素
                     if (text === template) {
@@ -1202,7 +1202,7 @@
             },
             comment: function comment(text) {
                 // 参数：注释内容 处理注释回调
-                console.log("匹配到注释 " + text);
+                // console.log("匹配到注释 " + text);
                 // 给父vdom插入一个注释vdom（文本节点）
                 currentParent.children.push({
                     type: 3,
@@ -1216,6 +1216,41 @@
 
         // 返回虚拟dom的跟节点对象
         return root;
+    }
+
+    var createCompiler = createCompilerCreator(function baseCompile(template) {
+        var ast = parse(template.trim());
+        if (options.optimize !== false) {
+            optimize(ast, options);
+        }
+        var code = generate(ast, options);
+        return {
+            ast: ast,
+            render: code.render,
+            staticRenderFns: code.staticRenderFns
+        }
+    });
+
+    function createCompilerCreator(baseCompile) {
+        function createCompiler() {
+            function compile(template) {
+                var errors = [];
+                var compiled = baseCompile(template);
+                {
+                    errors.push.apply(errors, detectErrors(compiled.ast));
+                }
+                compiled.errors = errors;
+                compiled.tips = tips;
+                return compiled
+            }
+
+            return {
+                compile: compile,
+                compileToFunctions: createCompileToFunctionFn(compile)
+            }
+        }
+
+        return createCompiler;
     }
 
     window.testparse = parse;

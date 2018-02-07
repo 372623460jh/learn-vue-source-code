@@ -9428,10 +9428,7 @@
                     return
                 }
                 var children = currentParent.children;
-                text = inPre || text.trim()
-                    ? isTextTag(currentParent) ? text : decodeHTMLCached(text)
-                    // only preserve whitespace if its not right after a starting tag
-                    : preserveWhitespace && children.length ? ' ' : '';
+                text = inPre || text.trim() ? isTextTag(currentParent) ? text : decodeHTMLCached(text) : preserveWhitespace && children.length ? ' ' : '';
                 if (text) {
                     var res;
                     if (!inVPre && text !== ' ' && (res = parseText(text, delimiters))) {
@@ -11003,8 +11000,7 @@
 
     function createCompilerCreator(baseCompile) {
         return function createCompiler(baseOptions) {
-            function compile(template,
-                             options) {
+            function compile(template, options) {
                 var finalOptions = Object.create(baseOptions);
                 var errors = [];
                 var tips = [];
@@ -11054,8 +11050,7 @@
 // `createCompilerCreator` allows creating compilers that use alternative
 // parser/optimizer/codegen, e.g the SSR optimizing compiler.
 // Here we just export a default compiler using the default parts.
-    var createCompiler = createCompilerCreator(function baseCompile(template,
-                                                                    options) {
+    var createCompiler = createCompilerCreator(function baseCompile(template, options) {
         var ast = parse(template.trim(), options);
         if (options.optimize !== false) {
             optimize(ast, options);

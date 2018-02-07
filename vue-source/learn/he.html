@@ -1,46 +1,46 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-	<meta charset="UTF-8">
-	<title>Title</title>
+    <meta charset="UTF-8">
+    <title>Title</title>
 </head>
 <body>
-<div id="app" class="{{message}}asd{{test.test1}}">{{test.test2}}<p>啊实打实大所多</p></p></div>
+<div id="app" class="asd">{{test.test2}}<p>啊实打实大所多</p></p></div>
 </body>
-<script src="./he.js" type="text/javascript"></script>
-<!--<script src="./vue_self.js" type="text/javascript"></script>-->
+<!--<script src="./he.js" type="text/javascript"></script>-->
+<script src="./vue_self.js" type="text/javascript"></script>
 <script>
 
-    //    var app = new Vue({
-    //        el: '#app',
-    //        data: {
-    //            message: 'Hello Vue!',
-    //            test: {
-    //                test1: '123123',
-    //                test2: [
-    //                    {
-    //                        test2: 123
-    //                    }
-    //                ]
-    //            },
-    //            test1: [
-    //                {
-    //                    test1: 6548
-    //                }
-    //            ]
-    //        }
-    //    });
+    var app = new Vue({
+        el: '#app',
+        data: {
+            message: 'Hello Vue!',
+            test: {
+                test1: '123123',
+                test2: [
+                    {
+                        test2: 123
+                    }
+                ]
+            },
+            test1: [
+                {
+                    test1: 6548
+                }
+            ]
+        }
+    });
 
-    var template =
-        '<div class="test" :class="classname1 classname2" data-age="{{data1}}测试自定义属性{{data2}}">' +
-        '   <span v-for="item in test1" :class="spanclass">{{name.yest}}</span>' +
-        '   <div v-if="test1">if</div>' +
-        '   <div v-else-if="test2">elseif</div>' +
-        '</div>';
-
-    var vdom = window.testparse(template);
-
-    console.log(vdom);
+    //    var template =
+    //        '<div class="test" :class="classname1 classname2" data-age="{{data1}}测试自定义属性{{data2}}">' +
+    //        '   <span v-for="item in test1" :class="spanclass">{{name.yest}}</span>' +
+    //		'	<div v-if="test1">if</div>' +
+    //        '   <div v-else-if="test2">elseif</div>' +
+    //        '</div>';
+    //
+    //    var vdom = window.testparse(template);
+    //
+    //    console.log(vdom);
 
 </script>
 </html>
