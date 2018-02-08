@@ -56,6 +56,21 @@
         IS_REGEX_CAPTURING_BROKEN = g === '';
     });
 
+    // 判断是不是html标签
+    var isHTMLTag = makeMap(
+        'html,body,base,head,link,meta,style,title,' +
+        'address,article,aside,footer,header,h1,h2,h3,h4,h5,h6,hgroup,nav,section,' +
+        'div,dd,dl,dt,figcaption,figure,picture,hr,img,li,main,ol,p,pre,ul,' +
+        'a,b,abbr,bdi,bdo,br,cite,code,data,dfn,em,i,kbd,mark,q,rp,rt,rtc,ruby,' +
+        's,samp,small,span,strong,sub,sup,time,u,var,wbr,area,audio,map,track,video,' +
+        'embed,object,param,source,canvas,script,noscript,del,ins,' +
+        'caption,col,colgroup,table,thead,tbody,td,th,tr,' +
+        'button,datalist,fieldset,form,input,label,legend,meter,optgroup,option,' +
+        'output,progress,select,textarea,' +
+        'details,dialog,menu,menuitem,summary,' +
+        'content,element,shadow,template,blockquote,iframe,tfoot'
+    );
+
     // 是不是矢量标签
     var isSVG = makeMap(
         'svg,animate,circle,clippath,cursor,defs,desc,ellipse,filter,font-face,' +
@@ -86,13 +101,27 @@
         }
     };
 
-    //缓存器
+    //缓存器将fn入参的执行结果缓存起来如
+    // var cachefn = cached(function (add) {
+    //     return add*2;
+    // });
+    // cachefn(2); //4  调用fn计算结果
+    // cachefn(2); //4  因为fn入参在闭包缓存变量中有直接从缓存中去不需要重复计算
     function cached(fn) {
         var cache = Object.create(null);
-        return (function cachedFn(str) {
+        var cachedFn = function (str) {
             var hit = cache[str];
             return hit || (cache[str] = fn(str))
-        })
+        };
+        return cachedFn;
+    }
+
+    /**
+     * 报错方法
+     * @param msg
+     */
+    function baseWarn(msg) {
+        console.error(("错误:" + msg));
     }
 
 
@@ -190,15 +219,14 @@
      * @param ns        //命名空间
      * @returns {{type: number, tag: *, attrsList: *, attrsMap: *, parent: *, children: Array}}
      */
-    function createASTElement(tag, attrs, parent, ns) {
+    function createASTElement(tag, attrs, parent) {
         return {
             type: 1,                        //标签类型（1是element节点）
             tag: tag,                       //标签名
             attrsList: attrs,               //标签属性数组
             attrsMap: makeAttrsMap(attrs),  //标签属性集合
             parent: parent,                 //父AST对象（父节点）
-            children: [],                   //子AST对象数组（子节点集合）
-            ns: ns                          //命名空间
+            children: []                   //子AST对象数组（子节点集合）
         }
     }
 
@@ -291,7 +319,7 @@
                 // iterator2属性对应有索引的key（有该属性无alias）
                 extend(el, res);
             } else {
-                console.error("无效的v-for指令" + exp);
+                baseWarn("无效的v-for指令" + exp);
             }
         }
     }
@@ -394,7 +422,7 @@
                 block: el
             });
         } else {
-            console.error("v-" + (el.elseif ? ('else-if="' + el.elseif + '"') : 'else') + "之前<" + (el.tag) + ">元素上没有 v-if 指令");
+            baseWarn("v-" + (el.elseif ? ('else-if="' + el.elseif + '"') : 'else') + "之前<" + (el.tag) + ">元素上没有 v-if 指令");
         }
     }
 
@@ -411,7 +439,7 @@
             } else {
                 if (children[i].text !== ' ') {
                     // v-if 和 else或elseif之间夹着一个有内容的非element元素
-                    console.error("文本 \"" + (children[i].text.trim()) + "\" 出现在 v-if 和 v-else(-if)之间。");
+                    baseWarn("文本 \"" + (children[i].text.trim()) + "\" 出现在 v-if 和 v-else(-if)之间。");
                 }
                 //出栈
                 children.pop();
@@ -668,6 +696,42 @@
 
     // 在解析ast时处理特殊指令数组transformNode处理class，transformNode$1处理style。如有其他可以增加
     var transforms = [transformNode, transformNode$1];
+    // 处理静态的样式和类名
+    var staticKeys = "staticClass,staticStyle";
+    // 处理render方法字符串的时候transformNode处理:class和staticClass，genData$1处理:style和staticStyle。如有其他可以增加
+    var dataGenFns = [genData, genData$1];
+
+    /**
+     * 拼接staticStyle和:style的字串（没看懂）
+     * @param el
+     * @return {string}
+     */
+    function genData$1(el) {
+        var data = '';
+        if (el.staticStyle) {
+            data += "staticStyle:" + (el.staticStyle) + ",";
+        }
+        if (el.styleBinding) {
+            data += "style:(" + (el.styleBinding) + "),";
+        }
+        return data
+    }
+
+    /**
+     * 拼接staticClass和:class的字串（没看懂）
+     * @param el
+     * @return {string}
+     */
+    function genData(el) {
+        var data = '';
+        if (el.staticClass) {
+            data += "staticClass:" + (el.staticClass) + ",";
+        }
+        if (el.classBinding) {
+            data += "class:" + (el.classBinding) + ",";
+        }
+        return data
+    }
 
     /**
      * 处理静态类名和绑定类名。静态类名是不可变的bind类名是通过表达式生成的
@@ -680,7 +744,7 @@
             // 匹配静态类中占位符
             var res = parseText(staticClass);
             if (res) {
-                console.error("class=\"" + staticClass + "\":请使用v-bind:或:来代替。例如：<div class=\"{{ val }}\">, 使用<div :class=\"val\">");
+                baseWarn("class=\"" + staticClass + "\":请使用v-bind:或:来代替。例如：<div class=\"{{ val }}\">, 使用<div :class=\"val\">");
             }
         }
         if (staticClass) {
@@ -706,7 +770,7 @@
             // 匹配静态样式中的占位符
             var res = parseText(staticStyle);
             if (res) {
-                console.error("style=\"" + staticStyle + "\":请使用v-bind:或:来代替。例如：<div style=\"{{ val }}\">, 使用<div :style=\"val\">");
+                baseWarn("style=\"" + staticStyle + "\":请使用v-bind:或:来代替。例如：<div style=\"{{ val }}\">, 使用<div :style=\"val\">");
             }
             el.staticStyle = JSON.stringify(parseStyleText(staticStyle));
         }
@@ -867,7 +931,7 @@
                 // html是匹配后的 last是匹配前的 匹配前后数据没发生改变（死循环） 就当做text标签处理
                 options.chars && options.chars(html);
                 if (!stack.length && options.warn) {
-                    console.error('格式化标签模板错误,匹配前后文本未变会造成死循环:' + html);
+                    baseWarn('格式化标签模板错误,匹配前后文本未变会造成死循环:' + html);
                 }
                 break;
             }
@@ -1014,7 +1078,7 @@
                 for (var i = stack.length - 1; i >= pos; i--) {
                     if (i > pos || !tagName) {
                         //没有匹配到结束标签
-                        console.error("标签 <" + (stack[i].tag) + "> 没有结束标签。");
+                        baseWarn("标签 <" + (stack[i].tag) + "> 没有结束标签。");
                     }
                     if (options.end) {
                         //执行查找到闭合元素的回调
@@ -1077,12 +1141,15 @@
                 }
 
                 // 创建AST对象(虚拟dom）
-                var element = createASTElement(tag, attrs, currentParent, ns ? ns : undefined);
+                var element = createASTElement(tag, attrs, currentParent);
+                if (ns) {
+                    element.ns = ns;
+                }
 
                 // 过滤模板中的script和style标签
                 if (isForbiddenTag(element)) {
                     element.forbidden = true;
-                    console.error('模板仅负责用来映射UI相关，请不要在模板中加入副作用的标签。如:<' + tag + '>,将不会被模板引擎解析');
+                    baseWarn('模板仅负责用来映射UI相关，请不要在模板中加入副作用的标签。如:<' + tag + '>,将不会被模板引擎解析');
                 }
 
                 if (!element.processed) {
@@ -1096,10 +1163,10 @@
                 // 校验根节点不能为slot，template和含有v-for的元素
                 function checkRootConstraints(el) {
                     if (el.tag === 'slot' || el.tag === 'template') {
-                        console.error('不能使用<' + (el.tag) + '>做为根节点因为它可能包含多个节点');
+                        baseWarn('不能使用<' + (el.tag) + '>做为根节点因为它可能包含多个节点');
                     }
                     if (el.attrsMap.hasOwnProperty('v-for')) {
-                        console.error('不能使用含有v-for指令的节点做为根节点因为它会呈现多个元素');
+                        baseWarn('不能使用含有v-for指令的节点做为根节点因为它会呈现多个元素');
                     }
                 }
 
@@ -1121,7 +1188,7 @@
                             block: element
                         });
                     } else {
-                        console.error('根节点中使用了v-if指令但在和根节点同级的元素中未发现elseif或else指令');
+                        baseWarn('根节点中使用了v-if指令但在和根节点同级的元素中未发现elseif或else指令');
                     }
                 }
 
@@ -1167,9 +1234,9 @@
                 if (!currentParent) {
                     //文本没有父元素
                     if (text === template) {
-                        console.error("传入模板只是一个文本而不是一个根元素");
+                        baseWarn("传入模板只是一个文本而不是一个根元素");
                     } else if ((text = text.trim())) {
-                        console.error("text \"" + text + "\" 外部根元素将被忽略。");
+                        baseWarn("text \"" + text + "\" 外部根元素将被忽略。");
                     }
                     return;
                 }
@@ -1214,45 +1281,214 @@
 
         praseHtml(template, options);
 
+        //优化虚拟dom
+        if (root) {
+            // 处理vdom各个节点的static属性
+            markStatic$1(root);
+            // 增加静态根节点标志
+            markStaticRoots(root, false);
+        }
         // 返回虚拟dom的跟节点对象
         return root;
     }
 
-    var createCompiler = createCompilerCreator(function baseCompile(template) {
-        var ast = parse(template.trim());
-        if (options.optimize !== false) {
-            optimize(ast, options);
-        }
-        var code = generate(ast, options);
-        return {
-            ast: ast,
-            render: code.render,
-            staticRenderFns: code.staticRenderFns
-        }
+    // 缓存处理后的处理静态属性的方法
+    var genStaticKeysCached = cached(function genStaticKeys$1(keys) {
+        // 判断vdom中的静态属性
+        return makeMap(
+            'type,tag,attrsList,attrsMap,plain,parent,children,attrs' +
+            (keys ? ',' + keys : '')
+        )
     });
 
-    function createCompilerCreator(baseCompile) {
-        function createCompiler() {
-            function compile(template) {
-                var errors = [];
-                var compiled = baseCompile(template);
-                {
-                    errors.push.apply(errors, detectErrors(compiled.ast));
-                }
-                compiled.errors = errors;
-                compiled.tips = tips;
-                return compiled
-            }
+    /**
+     * 判断是不是保留标签
+     * @param tag           vdom标签名
+     * @return {*}
+     */
+    var isReservedTag = function (tag) {
+        return isHTMLTag(tag) || isSVG(tag)
+    };
 
-            return {
-                compile: compile,
-                compileToFunctions: createCompileToFunctionFn(compile)
-            }
+    /**
+     * 检测vdom中静态属性的方法
+     */
+    var isStaticKey = genStaticKeysCached(staticKeys || '');
+
+    /**
+     * 检测是否是slot,component标签
+     * @type {Function}
+     */
+    var isBuiltInTag = makeMap('slot,component', true);
+
+    /**
+     * 判断vdom是不是静态的（静态节点指的是不需要做任何处理能直接映射成真实dom的）
+     * @param node
+     * @return {boolean}
+     */
+    function isStatic(node) {
+        // 含有表达式text节点
+        if (node.type === 2) {
+            return false;
         }
-
-        return createCompiler;
+        // 纯文本节点
+        if (node.type === 3) {
+            return true;
+        }
+        return !!(!node.hasBindings && //vdom中是否有除:class :style 之外的bind指令
+        !node.if && !node.for && //vdom中是否有if for指令
+        !isBuiltInTag(node.tag) &&//检测是否是slot,component标签
+        isReservedTag(node.tag) && //判断是不是预留标签
+        Object.keys(node).every(isStaticKey)); //判断vdom中的属性有没有不是静态属性的
     }
 
-    window.testparse = parse;
+    /**
+     * 给vdom中的各个节点增加是不是静态节点的static属性
+     * @param node          vdom
+     */
+    function markStatic$1(node) {
+        node.static = isStatic(node);
+        if (node.type === 1) {
+            if (!isReservedTag(node.tag)) {
+                // 不是预留元素
+                return;
+            }
+            for (var i = 0, l = node.children.length; i < l; i++) {
+                // 遍历vdom的字节点设置 static属性
+                var child = node.children[i];
+                markStatic$1(child);
+                if (!child.static) {
+                    // 如果子节点中出现一个非静态节点那么父元素也是非静态的
+                    node.static = false;
+                }
+            }
+            if (node.ifConditions) {
+                // 如果该vdom含有if else elseif 逻辑
+                for (var i$1 = 1, l$1 = node.ifConditions.length; i$1 < l$1; i$1++) {
+                    // 判断if else(if)逻辑中对应的vdom是不是静态节点
+                    var block = node.ifConditions[i$1].block;
+                    markStatic$1(block);
+                    if (!block.static) {
+                        node.static = false;
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 处理静态根节点
+     * @param node
+     * @param isInFor
+     */
+    function markStaticRoots(node, isInFor) {
+        if (node.type === 1) {
+            if (node.static) {
+                //如果是静态vdom且有for指令改属性为其子节点staticInFor统统为true
+                node.staticInFor = isInFor;
+            }
+            if (node.static && node.children.length && !(node.children.length === 1 && node.children[0].type === 3)) {
+                // 节点是静态并且有子节点并且不是只有一个文本子节点
+                node.staticRoot = true;
+                return;
+            } else {
+                node.staticRoot = false;
+            }
+            if (node.children) {
+                for (var i = 0, l = node.children.length; i < l; i++) {
+                    markStaticRoots(node.children[i], isInFor || !!node.for);
+                }
+            }
+            if (node.ifConditions) {
+                for (var i$1 = 1, l$1 = node.ifConditions.length; i$1 < l$1; i$1++) {
+                    markStaticRoots(node.ifConditions[i$1].block, isInFor);
+                }
+            }
+        }
+    }
+
+    /**
+     * CodegenState类
+     * @param options
+     * @constructor
+     */
+    function CodegenState(options) {
+        this.options = options;
+        this.warn = baseWarn;
+        this.transforms = transforms;
+        this.dataGenFns = dataGenFns;
+        this.directives = {};
+        var isReservedTag = isReservedTag;
+        this.maybeComponent = function (el) {
+            return !isReservedTag(el.tag);
+        };
+        this.onceId = 0;
+        this.staticRenderFns = [];
+    };
+
+
+    /**
+     * 生成vom对应的code
+     * @param el
+     * @param state
+     * @return {*}
+     */
+    function genElement(el, state) {
+        if (el.staticRoot && !el.staticProcessed) {
+            return genStatic(el, state)
+        } else if (el.for && !el.forProcessed) {
+            return genFor(el, state)
+        } else if (el.if && !el.ifProcessed) {
+            return genIf(el, state)
+        } else {
+            // component or element
+            var code;
+            if (el.component) {
+                code = genComponent(el.component, el, state);
+            } else {
+                var data = el.plain ? undefined : genData$2(el, state);
+                var children = el.inlineTemplate ? null : genChildren(el, state, true);
+                code = "_c('" + (el.tag) + "'" + (data ? ("," + data) : '') + (children ? ("," + children) : '') + ")";
+            }
+            // module transforms
+            for (var i = 0; i < state.transforms.length; i++) {
+                code = state.transforms[i](el, code);
+            }
+            return code
+        }
+    };
+
+    /**
+     * 生成render方法
+     * @param ast
+     * @param options
+     * @return {{render: string, staticRenderFns: Array}}
+     */
+    function generate(ast, options) {
+        var state = new CodegenState(options);
+        // var code = ast ? genElement(ast, state) : '_c("div")';
+        // return {
+        //     render: ("with(this){return " + code + "}"),
+        //     staticRenderFns: state.staticRenderFns
+        // }
+    }
+
+    /**
+     * 编译模板生成vdom
+     * @param template
+     */
+    function baseCompile(template, options) {
+        //将模板解析为vdom
+        var ast = parse(template.trim());
+        console.log(ast);
+        var code = generate(ast, options);
+        // return {
+        //     ast: ast,
+        //     render: code.render,
+        //     staticRenderFns: code.staticRenderFns
+        // }
+    };
+
+    window.testparse = baseCompile;
 
 })(window);

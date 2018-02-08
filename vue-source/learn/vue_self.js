@@ -6902,9 +6902,7 @@
     var RANGE_TOKEN = '__r';
     var CHECKBOX_RADIO_TOKEN = '__c';
 
-    function model(el,
-                   dir,
-                   _warn) {
+    function model(el, dir, _warn) {
         warn$1 = _warn;
         var value = dir.value;
         var modifiers = dir.modifiers;
@@ -10368,8 +10366,7 @@
     };
 
 
-    function generate(ast,
-                      options) {
+    function generate(ast, options) {
         var state = new CodegenState(options);
         var code = ast ? genElement(ast, state) : '_c("div")';
         return {
@@ -11052,6 +11049,7 @@
 // Here we just export a default compiler using the default parts.
     var createCompiler = createCompilerCreator(function baseCompile(template, options) {
         var ast = parse(template.trim(), options);
+        console.log(ast);
         if (options.optimize !== false) {
             optimize(ast, options);
         }
