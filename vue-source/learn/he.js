@@ -1415,17 +1415,206 @@
     function CodegenState(options) {
         this.options = options;
         this.warn = baseWarn;
-        this.transforms = transforms;
         this.dataGenFns = dataGenFns;
         this.directives = {};
-        var isReservedTag = isReservedTag;
+        var isReserved = isReservedTag;
         this.maybeComponent = function (el) {
-            return !isReservedTag(el.tag);
+            return !isReserved(el.tag);
         };
         this.onceId = 0;
         this.staticRenderFns = [];
     };
 
+    /**
+     * 处理静态根节点
+     * @param el
+     * @param state
+     * @return {string}
+     */
+    function genStatic(el, state) {
+        // 处理过静态根节点的标识
+        el.staticProcessed = true;
+        // 生成静态根节点处理的方法字串并压入state对象中
+        state.staticRenderFns.push(("with(this){return " + (genElement(el, state)) + "}"));
+        // 静态根节点返回
+        // _m()的执行字串
+        return ("_m(" + (state.staticRenderFns.length - 1) + (el.staticInFor ? ',true' : '') + ")");
+    }
+
+    /**
+     * 处理vdom中的for指令
+     * @param el                含有for的vdom对象
+     * @param state             CodegenState对象
+     * @param altGen
+     * @param altHelper
+     * @return {string}
+     */
+    function genFor(el, state, altGen, altHelper) {
+        // v-for="(value, key) in object"
+        // exp = object
+        // iterator1 = value
+        // iterator2 = key
+        // v-for="item in object"
+        // exp = object
+        // alias = item
+        // 循环体
+        var exp = el.for;
+        // 循环出的item
+        var alias = el.alias;
+        // 迭代器存在返回',迭代器' 不存在返回''
+        var iterator1 = el.iterator1 ? ("," + (el.iterator1)) : '';
+        var iterator2 = el.iterator2 ? ("," + (el.iterator2)) : '';
+
+        if (state.maybeComponent(el)) {
+            //如果不是预留标签
+            state.warn("<" + (el.tag) + " v-for=\"" + alias + " in " + exp + "\">非预留标签中使用for。", true);
+        }
+
+        // 给vdom增加for指令处理过的标识
+        el.forProcessed = true;
+        // 如v-for="(value, key) in object" 返回：
+        // _l((object),function(undefined,value,key){retren vdom的剩余表达式})
+        // _l()方法的执行字符串
+        return (altHelper || '_l') + "((" + exp + ")," +
+            "function(" + alias + iterator1 + iterator2 + "){" +
+            "return " + ((altGen || genElement)(el, state)) +
+            '})'
+    }
+
+    /**
+     * 处理vdom中的if指令
+     * @param el                含有if的vdom
+     * @param state             CodegenState对象
+     * @param altGen
+     * @param altEmpty
+     * @return {*}
+     */
+    function genIf(el, state, altGen, altEmpty) {
+        // 处理过标识
+        el.ifProcessed = true;
+        return genIfConditions(el.ifConditions.slice(), state, altGen, altEmpty)
+    }
+
+    /**
+     * 处理vdom中的IfConditions属性
+     * @param conditions
+     * @param state
+     * @param altGen
+     * @param altEmpty
+     * @return {*}
+     */
+    function genIfConditions(conditions, state, altGen, altEmpty) {
+        if (!conditions.length) {
+            // 如果IfConditions属性为空数组
+            return altEmpty || '_e()'
+        }
+
+        // 出栈栈底元素
+        var condition = conditions.shift();
+        if (condition.exp) {
+            // v-if='age>25' 返回
+            // (age>25)?if对应vdom生成的表达式:else(if)对应vdom生成的表达式
+            return ("(" + (condition.exp) + ")?" + (genTernaryExp(condition.block)) + ":" + (genIfConditions(conditions, state, altGen, altEmpty)))
+        } else {
+            return ("" + (genTernaryExp(condition.block)));
+        }
+
+        function genTernaryExp(el) {
+            return altGen ? altGen(el, state) : (el.once ? genOnce(el, state) : genElement(el, state));
+        }
+    }
+
+    /**
+     * 处理vdom上的其他属性
+     * @param el
+     * @param state
+     * @return {string}
+     */
+    function genData$2(el, state) {
+        var data = '{';
+        // 处理staticClass :class staticStyle :style生成相关表达式
+        for (var i = 0; i < state.dataGenFns.length; i++) {
+            data += state.dataGenFns[i](el);
+        }
+        data = data.replace(/,$/, '') + '}';
+        return data
+    }
+
+    /**
+     * 加工vdom子节点
+     * @param el
+     * @param state
+     * @param checkSkip
+     * @param altGenElement
+     * @param altGenNode
+     * @return {*}
+     */
+    function genChildren(el, state, checkSkip, altGenElement, altGenNode) {
+        var children = el.children;
+        if (children.length) {
+            var el$1 = children[0];
+            if (children.length === 1 && el$1.for) {
+                // 子节点只有一个且有for指令
+                return (altGenElement || genElement)(el$1, state)
+            }
+            //res == 2 有for 或者 if else(if)对应的vdom中有一个有for
+            var normalizationType = checkSkip ? getNormalizationType(children) : 0;
+            var gen = altGenNode || genNode;
+
+            // [子节点1表达式,子节点2表达式...],2
+            return ("[" + (children.map(function (c) {
+                return gen(c, state);
+            }).join(',')) + "]" + (normalizationType ? ("," + normalizationType) : ''))
+        }
+    }
+
+    /**
+     * 校验子节点类型
+     * @param children          子节点数组
+     * @return {number}
+     */
+    function getNormalizationType(children) {
+        var res = 0;
+        for (var i = 0; i < children.length; i++) {
+            var el = children[i];
+            if (el.type !== 1) {
+                continue;
+            }
+            // 有for 或者 if else(if)对应的vdom中有一个有for
+            if (el.for || (el.ifConditions && el.ifConditions.some(function (c) {
+                    return c.block.for !== undefined;
+                }))) {
+                res = 2;
+                break;
+            }
+        }
+        return res
+    }
+
+    /**
+     * 处理节点
+     * @param node
+     * @param state
+     * @return {*}
+     */
+    function genNode(node, state) {
+        if (node.type === 1) {
+            return genElement(node, state)
+        } else {
+            return genText(node)
+        }
+    }
+
+    // 处理文本bug
+    function transformSpecialNewlines(text) {
+        return text.replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029')
+    }
+
+    // 处理2,3类vdom
+    function genText(text) {
+        // 为2返回表达式_v(表达式) 为3返回_v(文本)
+        return ("_v(" + (text.type === 2 ? text.expression : transformSpecialNewlines(JSON.stringify(text.text))) + ")")
+    }
 
     /**
      * 生成vom对应的code
@@ -1441,20 +1630,13 @@
         } else if (el.if && !el.ifProcessed) {
             return genIf(el, state)
         } else {
-            // component or element
+            // vdom节点的处理
             var code;
-            if (el.component) {
-                code = genComponent(el.component, el, state);
-            } else {
-                var data = el.plain ? undefined : genData$2(el, state);
-                var children = el.inlineTemplate ? null : genChildren(el, state, true);
-                code = "_c('" + (el.tag) + "'" + (data ? ("," + data) : '') + (children ? ("," + children) : '') + ")";
-            }
-            // module transforms
-            for (var i = 0; i < state.transforms.length; i++) {
-                code = state.transforms[i](el, code);
-            }
-            return code
+            var data = genData$2(el, state);
+            var children = genChildren(el, state, true);
+            // 返回 _c('标签名',{'staticClass':'','class':'','staticStyle':'','style':''},[子节点1表达式,子节点2表达式...](,2(2代表子节点中存在for指令)))
+            code = "_c('" + (el.tag) + "'" + (data ? ("," + data) : '') + (children ? ("," + children) : '') + ")";
+            return code;
         }
     };
 
@@ -1466,11 +1648,13 @@
      */
     function generate(ast, options) {
         var state = new CodegenState(options);
-        // var code = ast ? genElement(ast, state) : '_c("div")';
-        // return {
-        //     render: ("with(this){return " + code + "}"),
-        //     staticRenderFns: state.staticRenderFns
-        // }
+        var code = ast ? genElement(ast, state) : '_c("div")';
+        return {
+            // render方法是在调用with方法
+            render: ("with(this){return " + code + "}"),
+            // 静态根节点渲染方法栈
+            staticRenderFns: state.staticRenderFns
+        }
     }
 
     /**
@@ -1480,14 +1664,30 @@
     function baseCompile(template, options) {
         //将模板解析为vdom
         var ast = parse(template.trim());
-        console.log(ast);
         var code = generate(ast, options);
-        // return {
-        //     ast: ast,
-        //     render: code.render,
-        //     staticRenderFns: code.staticRenderFns
-        // }
+        return {
+            ast: ast, //vdom
+            render: code.render,    //render方法表达式
+            staticRenderFns: code.staticRenderFns   //静态根节点渲染方法栈
+        }
     };
+
+    /**
+     * 创建编译器
+     * @param baseOptions
+     * @return {{compile: compile, compileToFunctions: *}}
+     */
+    function createCompiler() {
+        function compile(template, options) {
+            var compiled = baseCompile(template, options);
+            return compiled
+        }
+        return {
+            compile: compile,
+            compileToFunctions: createCompileToFunctionFn(compile)
+        }
+    }
+
 
     window.testparse = baseCompile;
 

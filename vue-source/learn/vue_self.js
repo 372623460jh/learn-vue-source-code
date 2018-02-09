@@ -10908,9 +10908,7 @@
     function createCompileToFunctionFn(compile) {
         var cache = Object.create(null);
 
-        return function compileToFunctions(template,
-                                           options,
-                                           vm) {
+        return function compileToFunctions(template, options, vm) {
             options = extend({}, options);
             var warn$$1 = options.warn || warn;
             delete options.warn;
