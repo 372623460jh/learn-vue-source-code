@@ -1624,10 +1624,13 @@
      */
     function genElement(el, state) {
         if (el.staticRoot && !el.staticProcessed) {
+            // 处理静态根节点
             return genStatic(el, state)
         } else if (el.for && !el.forProcessed) {
+            // 处理带有for指令的vdom
             return genFor(el, state)
         } else if (el.if && !el.ifProcessed) {
+            // 处理带有if指令集的vdom
             return genIf(el, state)
         } else {
             // vdom节点的处理
@@ -1662,8 +1665,9 @@
      * @param template
      */
     function baseCompile(template, options) {
-        //将模板解析为vdom
+        // 将模板解析为vdom
         var ast = parse(template.trim());
+        // 生成render方法
         var code = generate(ast, options);
         return {
             ast: ast, //vdom
@@ -1673,22 +1677,154 @@
     };
 
     /**
-     * 创建编译器
-     * @param baseOptions
+     * 无操作方法：当将字符串当做代码执行时发生错误返回该无操作方法
+     */
+    function noop(a, b, c) {
+    }
+
+    /**
+     * 将字符串当做代码执行
+     * @param code          代码字串
+     * @param errors        错误栈
+     * @return {*}
+     */
+    function createFunction(code, errors) {
+        try {
+            // 返回代码字串的执行结果
+            return new Function(code)
+        } catch (err) {
+            // 如果执行过程中发生错误将错误信息入栈
+            errors.push({err: err, code: code});
+            // 返回无操作方法
+            return noop
+        }
+    }
+
+
+    /**
+     * 创建编译器对象编译器对象中有2个方法
+     * compile方法：模板生成AST，render方法字串，静态节点方法字串栈
+     * compileToFunctions方法：将compile方法生成的方法字串解析为可执行的方法
      * @return {{compile: compile, compileToFunctions: *}}
      */
     function createCompiler() {
+
+        /**
+         * 编译模板的方法
+         * @param template
+         * @param options
+         * @return {{ast, render, staticRenderFns}|*}
+         */
         function compile(template, options) {
             var compiled = baseCompile(template, options);
-            return compiled
+            return compiled;
         }
+
+        /**
+         * 创建将模板编译成方法的方法
+         * @param compile 编译模板的方法
+         * @return {compileToFunctions}
+         */
+        function createCompileToFunctionFn(compile) {
+
+            // 缓存对象
+            var cache = Object.create(null);
+
+            return function compileToFunctions(template, options) {
+                options = extend({}, options);
+
+                try {
+                    new Function('return 1');
+                } catch (e) {
+                    if (e.toString().match(/unsafe-eval|CSP/)) {
+                        baseWarn('无法在该环境下工作,通过new Function()的方式来用字符串创建代码失败。');
+                    }
+                }
+
+                // 缓存模板生成的render方法
+                if (cache[template]) {
+                    return cache[template]
+                }
+
+                // 调用编译模板的方法
+                var compiled = compile(template, options);
+
+                // 如果编译没有问题
+                var res = {};
+                var fnGenErrors = [];
+
+                // 将vdom生成的render方法字串生成为可执行的render方法
+                res.render = createFunction(compiled.render, fnGenErrors);
+
+                // 将静态根节点栈中的方法生成为可执行的方法
+                res.staticRenderFns = compiled.staticRenderFns.map(function (code) {
+                    return createFunction(code, fnGenErrors)
+                });
+
+                // 生成的ast
+                res.ast = compiled.ast;
+
+                return (cache[template] = res);
+            }
+        }
+
         return {
             compile: compile,
             compileToFunctions: createCompileToFunctionFn(compile)
         }
     }
 
+    var ref$1 = createCompiler();
+    var compileToFunctions = ref$1.compileToFunctions;
 
-    window.testparse = baseCompile;
+    /**
+     * 组件入口
+     * @param options
+     * @constructor
+     */
+    function He(options) {
+        this.$options = options;
+    }
+
+    /**
+     * 组件原型上将模板解析为ast,render方法，静态根节点render方法
+     * @type {*}
+     */
+    var mount = He.prototype.$mount;
+    He.prototype.$mount = function (hydrating) {
+        var options = this.$options;
+        // 模板
+        var template = options.template;
+        if (template) {
+
+            // 将模板编译为render方法和ast
+            var ref = compileToFunctions(template, {
+                shouldDecodeNewlines: shouldDecodeNewlines,
+                shouldDecodeNewlinesForHref: shouldDecodeNewlinesForHref,
+                delimiters: options.delimiters,
+                comments: options.comments
+            }, this);
+            var render = ref.render;
+            var staticRenderFns = ref.staticRenderFns;
+            options.render = render;
+            options.staticRenderFns = staticRenderFns;
+
+            /* istanbul ignore if */
+            if ("development" !== 'production' && config.performance && mark) {
+                mark('compile end');
+                measure(("vue " + (this._name) + " compile"), 'compile', 'compile end');
+            }
+        }
+
+        return mount.call(this, el, hydrating)
+    };
+
+    /**
+     * 编译模板方法
+     * 生成AST,对应模板的render方法，以及静态根节点方法栈
+     */
+    He.compile = compileToFunctions;
+
+    window.testparse = He;
 
 })(window);
