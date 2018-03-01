@@ -10,6 +10,17 @@
 	<div v-if="test">if</div>
 	<div v-else-if="test1">elseif</div>
 </div>
+<div class="test1">
+	<span>123123</span>
+	<div>if</div>
+	<div>elseif</div>
+</div>
+<div class="test2">
+	<span v-for="item in test.test2">
+		<div v-if="test">if</div>
+		<div v-else-if="test1">elseif</div>
+	</span>
+</div>
 </body>
 <script src="./he.js" type="text/javascript"></script>
 <script src="./vue_self.js" type="text/javascript"></script>
@@ -56,6 +67,16 @@
 
     var app = new Vue({
         el: '.test',
+        data: data
+    });
+
+    var app1 = new Vue({
+        el: '.test1',
+        data: data
+    });
+
+    var app2 = new Vue({
+        el: '.test2',
         data: data
     });
 

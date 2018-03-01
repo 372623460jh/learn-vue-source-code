@@ -1797,6 +1797,11 @@
 
 
     //=======================执行render方法依赖的方法==================================
+
+    function isObject(obj) {
+        return obj !== null && typeof obj === 'object'
+    }
+
     /**
      * render方法执行的上下文对象，里面保存了render方法执行所需要的所有方法
      * @constructor
@@ -1810,29 +1815,12 @@
      * @param target
      */
     function installRenderHelpers(target) {
-        target._o = markOnce;
-        /**
-         * _n(val) 将val转换为number,如果不是number就返回val
-         */
-        target._n = toNumber;
-        /**
-         * _s(val) 将val转换为string。null返回''，object返回缩进2个空格的object字串
-         * @type {toString}
-         * @private
-         */
-        target._s = toString;
-        /**
-         * <span v-for="item in test.test2">{{item.asd}}</span> 会被解析为
-         * _l((test.test2),function(item){return _c('span',[_v(_s(item.asd))])})
-         * 第一个参数是被循环对象，第二个参数是循环回调
-         */
-        target._l = renderList;
-        target._t = renderSlot;
-        target._q = looseEqual;
-        target._i = looseIndexOf;
-        target._m = renderStatic;
-        target._f = resolveFilter;
-        target._k = checkKeyCodes;
+        target._n = toNumber;//处理number
+        target._s = toString;//处理string
+        target._l = renderList;//处理for循环
+        target._q = looseEqual;//比较是否相等
+        target._i = looseIndexOf;//检索数组中是否有值等于val
+        target._m = renderStatic;//渲染静态节点
         target._b = bindObjectProps;
         target._v = createTextVNode;
         target._e = createEmptyVNode;
@@ -1842,34 +1830,19 @@
 
     // installRenderHelpers(FunctionalRenderContext.prototype);
 
-    function markOnce(tree, index, key) {
-        markStatic(tree, ("__once__" + index + (key ? ("_" + key) : "")), true);
-        return tree;
-    }
-
-    function markStatic(tree, key, isOnce) {
-        if (Array.isArray(tree)) {
-            for (var i = 0; i < tree.length; i++) {
-                if (tree[i] && typeof tree[i] !== 'string') {
-                    markStaticNode(tree[i], (key + "_" + i), isOnce);
-                }
-            }
-        } else {
-            markStaticNode(tree, key, isOnce);
-        }
-    }
-
-    function markStaticNode(node, key, isOnce) {
-        node.isStatic = true;
-        node.key = key;
-        node.isOnce = isOnce;
-    }
-
+    /**
+     * _n(val) 将val转换为number,如果不是number就返回val
+     */
     function toNumber(val) {
         var n = parseFloat(val);
         return isNaN(n) ? val : n
     }
 
+    /**
+     * _s(val) 将val转换为string。null返回''，object返回缩进2个空格的object字串
+     * @type {toString}
+     * @private
+     */
     function toString(val) {
         return val == null
             ? ''
@@ -1921,6 +1894,164 @@
         return ret;
     }
 
+    /**
+     * 判断if或者if-else中的条件是否相等
+     * @param a
+     * @param b
+     * @returns {*}
+     */
+    function looseEqual(a, b) {
+        // 如果相等返回true
+        if (a === b) {
+            return true
+        }
+        var isObjectA = isObject(a);
+        var isObjectB = isObject(b);
+        // 如果a，b都是object类型
+        if (isObjectA && isObjectB) {
+            try {
+                var isArrayA = Array.isArray(a);
+                var isArrayB = Array.isArray(b);
+                if (isArrayA && isArrayB) {
+                    //如果a b都是数组
+                    return a.length === b.length && a.every(function (e, i) {
+                            return looseEqual(e, b[i])
+                        })
+                } else if (!isArrayA && !isArrayB) {
+                    //如果a b都是对象
+                    var keysA = Object.keys(a);
+                    var keysB = Object.keys(b);
+                    return keysA.length === keysB.length && keysA.every(function (key) {
+                            return looseEqual(a[key], b[key])
+                        })
+                } else {
+                    // 否则放回false
+                    return false
+                }
+            } catch (e) {
+                return false
+            }
+        } else if (!isObjectA && !isObjectB) {
+            // a,b既不是object也不相等转为String比较 如 2 === '2' 转为字串后就相等
+            return String(a) === String(b)
+        } else {
+            return false
+        }
+    }
+
+    /**
+     * 检索数组中是否有值等于val
+     * @param arr           数组
+     * @param val           比较值
+     * @returns {number}    -1表示没有相等的 其他表示匹配的索引值
+     */
+    function looseIndexOf(arr, val) {
+        for (var i = 0; i < arr.length; i++) {
+            if (looseEqual(arr[i], val)) {
+                return i
+            }
+        }
+        return -1
+    }
+
+    /**
+     * 渲染静态vnode
+     * @param index         vm._staticTrees中的索引
+     * @param isInFor       是否在for指令中
+     * @returns {*}
+     */
+    function renderStatic(index, isInFor) {
+        var cached = this._staticTrees || (this._staticTrees = []);
+        var tree = cached[index];
+        if (tree && !isInFor) {
+            // 拷贝对应vm._staticTrees缓存中对应的静态vnode
+            return Array.isArray(tree) ? cloneVNodes(tree) : cloneVNode(tree)
+        }
+        // 调用解析ast时生成的对应的staticRenderFns方法
+        tree = cached[index] = this.$options.staticRenderFns[index].call(
+            this,
+            null,
+            this
+        );
+        markStatic(tree, ("__static__" + index), false);
+        return tree;
+    }
+
+    /**
+     * 克隆vnode栈
+     * @param vnodes    vnode数组
+     * @param deep
+     * @returns {Array}
+     */
+    function cloneVNodes(vnodes, deep) {
+        var len = vnodes.length;
+        var res = new Array(len);
+        for (var i = 0; i < len; i++) {
+            res[i] = cloneVNode(vnodes[i], deep);
+        }
+        return res
+    }
+
+    /**
+     * 克隆vnode
+     * @param vnode     需要克隆的vnode
+     * @param deep      是否深度克隆（克隆子元素）
+     * @returns {VNode}
+     */
+    function cloneVNode(vnode, deep) {
+        // 组件选项
+        var componentOptions = vnode.componentOptions;
+        // 创建一个vnode实例
+        var cloned = new VNode(
+            vnode.tag,//标签名
+            vnode.data,//对应的数据
+            vnode.children,//子节点
+            vnode.text,
+            vnode.elm,
+            vnode.context,
+            componentOptions,
+            vnode.asyncFactory
+        );
+        cloned.ns = vnode.ns;//命名空间
+        cloned.isStatic = vnode.isStatic;//是否静态节点
+        cloned.key = vnode.key;
+        cloned.isComment = vnode.isComment;
+        cloned.fnContext = vnode.fnContext;
+        cloned.fnOptions = vnode.fnOptions;
+        cloned.fnScopeId = vnode.fnScopeId;
+        cloned.isCloned = true;
+        if (deep) {
+            // 深度克隆（克隆子元素）
+            if (vnode.children) {
+                cloned.children = cloneVNodes(vnode.children, true);
+            }
+            if (componentOptions && componentOptions.children) {
+                componentOptions.children = cloneVNodes(componentOptions.children, true);
+            }
+        }
+        return cloned
+    }
+
+
+
+    function markStatic(tree, key, isOnce) {
+        if (Array.isArray(tree)) {
+            for (var i = 0; i < tree.length; i++) {
+                if (tree[i] && typeof tree[i] !== 'string') {
+                    markStaticNode(tree[i], (key + "_" + i), isOnce);
+                }
+            }
+        } else {
+            markStaticNode(tree, key, isOnce);
+        }
+    }
+
+    function markStaticNode(node, key, isOnce) {
+        node.isStatic = true;
+        node.key = key;
+        node.isOnce = isOnce;
+    }
+
 
     //=======================执行render方法依赖的方法(结束)==================================
 
@@ -1943,9 +2074,6 @@
         }
     }
 
-
-    var uid$2 = 0;
-
     /**
      * 是不是原始数据类型
      * @param value
@@ -1960,6 +2088,10 @@
         )
     }
 
+
+    var uid$2 = 0;
+
+    //==========================创建vnode的方法==================================
     var SIMPLE_NORMALIZE = 1;
     var ALWAYS_NORMALIZE = 2;
 
@@ -2062,6 +2194,7 @@
      */
     function He(options) {
         this.$options = options;
+        this._staticTrees = null;//初始化静态树
         this.$createElement = function (a, b, c, d) {
             return createElement(vm, a, b, c, d, true);
         };
