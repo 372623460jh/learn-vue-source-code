@@ -3,6 +3,11 @@
  */
 !(function (window, undefined) {
 
+    'use strict';
+
+    // 创建一个不可添加属性的对象
+    var emptyObject = Object.freeze({});
+
     // 匹配出dom字串中的所有属性 class="test"
     var attribute = /^\s*([^\s"'<>\/=]+)(?:\s*(=)\s*(?:"([^"]*)"+|'([^']*)'+|([^\s"'=<>`]+)))?/;
     var ncname = '[a-zA-Z_][\\w\\-\\.]*';
@@ -100,6 +105,21 @@
             return decoder.textContent
         }
     };
+
+    /**
+     * 无操作方法：当将字符串当做代码执行时发生错误返回该无操作方法
+     */
+    function noop(a, b, c) {
+    }
+
+    /**
+     * 非undefined或null
+     * @param v
+     * @return {boolean}
+     */
+    function isDef(v) {
+        return v !== undefined && v !== null
+    }
 
     //缓存器将fn入参的执行结果缓存起来如
     // var cachefn = cached(function (add) {
@@ -1676,11 +1696,6 @@
         }
     };
 
-    /**
-     * 无操作方法：当将字符串当做代码执行时发生错误返回该无操作方法
-     */
-    function noop(a, b, c) {
-    }
 
     /**
      * 将字符串当做代码执行
@@ -1777,6 +1792,269 @@
     var ref$1 = createCompiler();
     var compileToFunctions = ref$1.compileToFunctions;
 
+
+    //==============================解析模板结束==================================
+
+
+    //=======================执行render方法依赖的方法==================================
+    /**
+     * render方法执行的上下文对象，里面保存了render方法执行所需要的所有方法
+     * @constructor
+     */
+    function FunctionalRenderContext() {
+
+    }
+
+    /**
+     * 执行render方法用到的所有方法
+     * @param target
+     */
+    function installRenderHelpers(target) {
+        target._o = markOnce;
+        /**
+         * _n(val) 将val转换为number,如果不是number就返回val
+         */
+        target._n = toNumber;
+        /**
+         * _s(val) 将val转换为string。null返回''，object返回缩进2个空格的object字串
+         * @type {toString}
+         * @private
+         */
+        target._s = toString;
+        /**
+         * <span v-for="item in test.test2">{{item.asd}}</span> 会被解析为
+         * _l((test.test2),function(item){return _c('span',[_v(_s(item.asd))])})
+         * 第一个参数是被循环对象，第二个参数是循环回调
+         */
+        target._l = renderList;
+        target._t = renderSlot;
+        target._q = looseEqual;
+        target._i = looseIndexOf;
+        target._m = renderStatic;
+        target._f = resolveFilter;
+        target._k = checkKeyCodes;
+        target._b = bindObjectProps;
+        target._v = createTextVNode;
+        target._e = createEmptyVNode;
+        target._u = resolveScopedSlots;
+        target._g = bindObjectListeners;
+    }
+
+    // installRenderHelpers(FunctionalRenderContext.prototype);
+
+    function markOnce(tree, index, key) {
+        markStatic(tree, ("__once__" + index + (key ? ("_" + key) : "")), true);
+        return tree;
+    }
+
+    function markStatic(tree, key, isOnce) {
+        if (Array.isArray(tree)) {
+            for (var i = 0; i < tree.length; i++) {
+                if (tree[i] && typeof tree[i] !== 'string') {
+                    markStaticNode(tree[i], (key + "_" + i), isOnce);
+                }
+            }
+        } else {
+            markStaticNode(tree, key, isOnce);
+        }
+    }
+
+    function markStaticNode(node, key, isOnce) {
+        node.isStatic = true;
+        node.key = key;
+        node.isOnce = isOnce;
+    }
+
+    function toNumber(val) {
+        var n = parseFloat(val);
+        return isNaN(n) ? val : n
+    }
+
+    function toString(val) {
+        return val == null
+            ? ''
+            : typeof val === 'object'
+                ? JSON.stringify(val, null, 2)
+                : String(val)
+    }
+
+    /**
+     * val是v-for循环需要处理的指令
+     * <span v-for="item in test.test2">{{item.asd}}</span> 会被解析为
+     * _l((test.test2),function(item){return _c('span',[_v(_s(item.asd))])})
+     * @param val           待循环对象
+     * @param render        循环执行的回调
+     * @return {*}
+     */
+    function renderList(val, render) {
+        var ret, i, l, keys, key;
+        // 如果val是数组或者是字串
+        if (Array.isArray(val) || typeof val === 'string') {
+            ret = new Array(val.length);
+            for (i = 0, l = val.length; i < l; i++) {
+                ret[i] = render(val[i], i);
+            }
+        }
+        // 如果val是number就是循环次数
+        else if (typeof val === 'number') {
+            ret = new Array(val);
+            for (i = 0; i < val; i++) {
+                // 执行回调入参 当前循环几次，真是循环计数器
+                ret[i] = render(i + 1, i);
+            }
+        }
+        // 如果val是对象就是循环对象的属性
+        else if (isObject(val)) {
+            keys = Object.keys(val);
+            ret = new Array(keys.length);
+            for (i = 0, l = keys.length; i < l; i++) {
+                key = keys[i];
+                // 执行回调入参 属性值，属性名，第几个属性
+                ret[i] = render(val[key], key, i);
+            }
+        }
+        if (isDef(ret)) {
+            // 如果存在标注is vnode list标记
+            (ret)._isVList = true;
+        }
+        // 返回创建的vnode数组
+        return ret;
+    }
+
+
+    //=======================执行render方法依赖的方法(结束)==================================
+
+
+    /**
+     * 钩子方法，调用vm中的hook方法
+     * @param vm        上下文
+     * @param hook      方法名
+     */
+    function callHook(vm, hook) {
+        var handlers = vm.$options[hook];
+        if (handlers) {
+            for (var i = 0, j = handlers.length; i < j; i++) {
+                try {
+                    handlers[i].call(vm);
+                } catch (e) {
+                    baseWarn('hook方法调用生命周期方法出错：' + e);
+                }
+            }
+        }
+    }
+
+
+    var uid$2 = 0;
+
+    /**
+     * 是不是原始数据类型
+     * @param value
+     * @return {boolean}
+     */
+    function isPrimitive(value) {
+        return (
+            typeof value === 'string' ||
+            typeof value === 'number' ||
+            typeof value === 'symbol' ||
+            typeof value === 'boolean'
+        )
+    }
+
+    var SIMPLE_NORMALIZE = 1;
+    var ALWAYS_NORMALIZE = 2;
+
+    function createElement(context, tag, data, children, normalizationType, alwaysNormalize) {
+        if (Array.isArray(data) || isPrimitive(data)) {
+            //如果
+            normalizationType = children;
+            children = data;
+            data = undefined;
+        }
+        if (alwaysNormalize === true) {
+            normalizationType = ALWAYS_NORMALIZE;
+        }
+        return _createElement(context, tag, data, children, normalizationType);
+    }
+
+    // function _createElement(context, tag, data, children, normalizationType) {
+    //     if (isDef(data) && isDef((data).__ob__)) {
+    //         "development" !== 'production' && warn(
+    //             "Avoid using observed data object as vnode data: " + (JSON.stringify(data)) + "\n" +
+    //             'Always create fresh vnode data objects in each render!',
+    //             context
+    //         );
+    //         return createEmptyVNode()
+    //     }
+    //     // object syntax in v-bind
+    //     if (isDef(data) && isDef(data.is)) {
+    //         tag = data.is;
+    //     }
+    //     if (!tag) {
+    //         // in case of component :is set to falsy value
+    //         return createEmptyVNode()
+    //     }
+    //     // warn against non-primitive key
+    //     if ("development" !== 'production' &&
+    //         isDef(data) && isDef(data.key) && !isPrimitive(data.key)
+    //     ) {
+    //         {
+    //             warn(
+    //                 'Avoid using non-primitive value as key, ' +
+    //                 'use string/number value instead.',
+    //                 context
+    //             );
+    //         }
+    //     }
+    //     // support single function children as default scoped slot
+    //     if (Array.isArray(children) &&
+    //         typeof children[0] === 'function'
+    //     ) {
+    //         data = data || {};
+    //         data.scopedSlots = {default: children[0]};
+    //         children.length = 0;
+    //     }
+    //     if (normalizationType === ALWAYS_NORMALIZE) {
+    //         children = normalizeChildren(children);
+    //     } else if (normalizationType === SIMPLE_NORMALIZE) {
+    //         children = simpleNormalizeChildren(children);
+    //     }
+    //     var vnode, ns;
+    //     if (typeof tag === 'string') {
+    //         var Ctor;
+    //         ns = (context.$vnode && context.$vnode.ns) || config.getTagNamespace(tag);
+    //         if (config.isReservedTag(tag)) {
+    //             // platform built-in elements
+    //             vnode = new VNode(
+    //                 config.parsePlatformTagName(tag), data, children,
+    //                 undefined, undefined, context
+    //             );
+    //         } else if (isDef(Ctor = resolveAsset(context.$options, 'components', tag))) {
+    //             // component
+    //             vnode = createComponent(Ctor, data, context, children, tag);
+    //         } else {
+    //             // unknown or unlisted namespaced elements
+    //             // check at runtime because it may get assigned a namespace when its
+    //             // parent normalizes children
+    //             vnode = new VNode(
+    //                 tag, data, children,
+    //                 undefined, undefined, context
+    //             );
+    //         }
+    //     } else {
+    //         // direct component options / constructor
+    //         vnode = createComponent(tag, data, context, children);
+    //     }
+    //     if (isDef(vnode)) {
+    //         if (ns) {
+    //             applyNS(vnode, ns);
+    //         }
+    //         return vnode
+    //     } else {
+    //         return createEmptyVNode()
+    //     }
+    // }
+
+
     /**
      * 组件入口
      * @param options
@@ -1784,13 +2062,144 @@
      */
     function He(options) {
         this.$options = options;
+        this.$createElement = function (a, b, c, d) {
+            return createElement(vm, a, b, c, d, true);
+        };
+        this._c = function (a, b, c, d) {
+            return createElement(vm, a, b, c, d, false);
+        };
+        // initProxy(this);
+        this.$mount(false);
+    }
+
+    // /**
+    //  * 更新虚拟dom的方法
+    //  * @param vnode         执行render生成的vnode
+    //  * @param hydrating
+    //  * @private
+    //  */
+    // He.prototype._update = function (vnode, hydrating) {
+    //     var vm = this;
+    //
+    //     // 是否执行上下文中的生命周期方法
+    //     if (vm._isMounted) {
+    //         callHook(vm, 'beforeUpdate');
+    //     }
+    //
+    //     // 模板对应的dom
+    //     var prevEl = vm.$el;
+    //     var prevVnode = vm._vnode;
+    //     var prevActiveInstance = activeInstance;
+    //     activeInstance = vm;
+    //     vm._vnode = vnode;
+    //     // Vue.prototype.__patch__ is injected in entry points
+    //     // based on the rendering backend used.
+    //     if (!prevVnode) {
+    //         // initial render
+    //         vm.$el = vm.__patch__(
+    //             vm.$el, vnode, hydrating, false /* removeOnly */,
+    //             vm.$options._parentElm,
+    //             vm.$options._refElm
+    //         );
+    //         // no need for the ref nodes after initial patch
+    //         // this prevents keeping a detached DOM tree in memory (#5851)
+    //         vm.$options._parentElm = vm.$options._refElm = null;
+    //     } else {
+    //         // updates
+    //         vm.$el = vm.__patch__(prevVnode, vnode);
+    //     }
+    //     activeInstance = prevActiveInstance;
+    //     // update __vue__ reference
+    //     if (prevEl) {
+    //         prevEl.__vue__ = null;
+    //     }
+    //     if (vm.$el) {
+    //         vm.$el.__vue__ = vm;
+    //     }
+    //     // if parent is an HOC, update its $el as well
+    //     if (vm.$vnode && vm.$parent && vm.$vnode === vm.$parent._vnode) {
+    //         vm.$parent.$el = vm.$el;
+    //     }
+    //     // updated hook is called by the scheduler to ensure that children are
+    //     // updated in a parent's updated hook.
+    // };
+
+    /**
+     *
+     * @return {*}
+     * @private
+     */
+    He.prototype._render = function () {
+
+        var vm = this;
+        var ref = vm.$options;
+        // 模板生成的render方法
+        var render = ref.render;
+        // 父虚拟dom
+        var _parentVnode = ref._parentVnode;
+
+        vm.$scopedSlots = (_parentVnode && _parentVnode.data.scopedSlots) || emptyObject;
+
+        vm.$vnode = _parentVnode;
+
+        var vnode = render.call(vm, vm.$createElement);
+
+        vnode.parent = _parentVnode;
+
+        return vnode
+    };
+
+    // /**
+    //  * 公共的mount方法
+    //  * @param el
+    //  * @param hydrating
+    //  * @return {*}
+    //  */
+    // He.prototype.$mount = function (el, hydrating) {
+    //     el = el && inBrowser ? query(el) : undefined;
+    //     return mountComponent(this, el, hydrating)
+    // };
+
+    /**
+     * 增加编译
+     * @param vm 组件上下文对象
+     * @param el dom对象
+     * @param hydrating
+     * @return {*}
+     */
+    function mountComponent(vm, template, hydrating) {
+
+        // 将模板转换为dom对象
+        vm.$el = vm.parseDom(template);
+
+        // 执行vm中的beforeMount生命周期方法
+        callHook(vm, 'beforeMount');
+
+        // 更新组件的方法
+        // var updateComponent = function () {
+        //     vm._update(vm._render(), hydrating);
+        // };
+
+        // vm._render();
+
+        // new Watcher(vm, updateComponent, noop, null, true /* isRenderWatcher */);
+        // hydrating = false;
+        //
+        // // manually mounted instance, call mounted on self
+        // // mounted is called for render-created child components in its inserted hook
+        // if (vm.$vnode == null) {
+        //     vm._isMounted = true;
+        //     // 执行vm中的mounted生命周期方法
+        //     callHook(vm, 'mounted');
+        // }
+        return vm;
     }
 
     /**
-     * 组件原型上将模板解析为ast,render方法，静态根节点render方法
+     * 模板解析为ast,render方法，静态根节点render方法
+     * 并挂载到vm（this）上
      * @type {*}
      */
-    var mount = He.prototype.$mount;
     He.prototype.$mount = function (hydrating) {
         var options = this.$options;
         // 模板
@@ -1798,25 +2207,27 @@
         if (template) {
 
             // 将模板编译为render方法和ast
-            var ref = compileToFunctions(template, {
-                shouldDecodeNewlines: shouldDecodeNewlines,
-                shouldDecodeNewlinesForHref: shouldDecodeNewlinesForHref,
-                delimiters: options.delimiters,
-                comments: options.comments
-            }, this);
+            var ref = compileToFunctions(template, {});
             var render = ref.render;
             var staticRenderFns = ref.staticRenderFns;
+            var ast = ref.ast;
             options.render = render;
             options.staticRenderFns = staticRenderFns;
-
-            /* istanbul ignore if */
-            if ("development" !== 'production' && config.performance && mark) {
-                mark('compile end');
-                measure(("vue " + (this._name) + " compile"), 'compile', 'compile end');
-            }
+            options.ast = ast;
         }
 
-        return mount.call(this, el, hydrating)
+        return mountComponent.call(this, this, template, hydrating);
+    };
+
+    /**
+     * 将html转换为dom
+     * @param html
+     * @return {Element}
+     */
+    He.prototype.parseDom = function (html) {
+        var objE = document.createElement("div");
+        objE.innerHTML = html;
+        return objE.children[0];
     };
 
     /**

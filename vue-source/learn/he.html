@@ -5,8 +5,8 @@
 	<title>Title</title>
 </head>
 <body>
-<div class="test" :class="message">
-	<span v-for="item in test.test2" :class="test1">{{test.test1}}</span>
+<div class="test">
+	<span v-for="item in test.test2">{{item.asd}}<br/></span>
 	<div v-if="test">if</div>
 	<div v-else-if="test1">elseif</div>
 </div>
@@ -16,35 +16,47 @@
 <script>
 
     var template =
-        '<div class="test" :class="message">' +
-        '   <span v-for="item in test.test2" :class="test1">{{test.test1}}</span>' +
+        '<div class="test">' +
+        '   <span v-for="item in test.test2">{{item.asd}}</span>' +
         '   <div v-if="test">if</div>' +
         '   <div v-else-if="test1">elseif</div>' +
         '</div>';
 
-    console.log(window.testparse(template, {}));
+    var data = {
+        message: 'Hello Vue!',
+        test: {
+            test1: '123123',
+            test2: [
+                {
+                    asd: 123
+                },
+                {
+                    asd: 123
+                },
+                {
+                    asd: 123
+                }
+            ]
+        },
+        test1: [
+            {
+                test1: 6548
+            }
+        ]
+    };
 
+    //    console.log(window.testparse(template, {}));
+
+    var ss = new window.testparse({
+        template: template,
+        data: data
+    });
 
     //    plain
 
     var app = new Vue({
         el: '.test',
-        data: {
-            message: 'Hello Vue!',
-            test: {
-                test1: '123123',
-                test2: [
-                    {
-                        test2: 123
-                    }
-                ]
-            },
-            test1: [
-                {
-                    test1: 6548
-                }
-            ]
-        }
+        data: data
     });
 
 </script>
