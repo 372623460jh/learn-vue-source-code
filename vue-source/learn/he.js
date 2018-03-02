@@ -738,16 +738,18 @@
     }
 
     /**
-     * 拼接staticClass和:class的字串（没看懂）
-     * @param el
+     * 拼接staticClass和:class的字串
+     * @param el            ast对象
      * @return {string}
      */
     function genData(el) {
         var data = '';
         if (el.staticClass) {
+            //静态类的处理
             data += "staticClass:" + (el.staticClass) + ",";
         }
         if (el.classBinding) {
+            //:class 处理绑定的class
             data += "class:" + (el.classBinding) + ",";
         }
         return data
@@ -772,7 +774,7 @@
             el.staticClass = JSON.stringify(staticClass);
         }
         // 获取vdom上的v-bind:class 或 :class
-        var classBinding = getBindingAttr(el, 'class');
+        var classBinding = getBindingAttr(el, 'class', false);
         if (classBinding) {
             // 解析v-bind:class 或者 :class 指令 添加classBinding属性
             el.classBinding = classBinding;
@@ -795,7 +797,7 @@
             el.staticStyle = JSON.stringify(parseStyleText(staticStyle));
         }
         // 获取vdom上的v-bind:style 或 :style
-        var styleBinding = getBindingAttr(el, 'style');
+        var styleBinding = getBindingAttr(el, 'style', false);
         if (styleBinding) {
             // 解析v-bind:style 或者 :style 指令 添加styleBinding属性
             el.styleBinding = styleBinding;
@@ -1455,6 +1457,7 @@
         // 处理过静态根节点的标识
         el.staticProcessed = true;
         // 生成静态根节点处理的方法字串并压入state对象中
+        // with方法的作用：with(obj)作用就是将后面的{}中的语句块中的缺省对象设置为obj，那么在其后面的{}语句块中引用obj的方法或属性时可以省略obj.的输入而直接使用方法或属性的名称。
         state.staticRenderFns.push(("with(this){return " + (genElement(el, state)) + "}"));
         // 静态根节点返回
         // _m()的执行字串
@@ -1795,19 +1798,50 @@
 
     //==============================解析模板结束==================================
 
+    //==============================虚拟节点部分==================================
+    /**
+     * 虚拟node对象
+     * @param tag
+     * @param data
+     * @param children
+     * @param text
+     * @param elm
+     * @param context
+     * @param componentOptions
+     * @param asyncFactory
+     * @constructor
+     */
+    var VNode = function VNode(tag, data, children, text, elm, context, componentOptions, asyncFactory) {
+        this.tag = tag;
+        this.data = data;
+        this.children = children;
+        this.text = text;
+        this.elm = elm;
+        this.ns = undefined;
+        this.context = context;
+        this.fnContext = undefined;
+        this.fnOptions = undefined;
+        this.fnScopeId = undefined;
+        this.key = data && data.key;
+        this.componentOptions = componentOptions;
+        this.componentInstance = undefined;
+        this.parent = undefined;
+        this.raw = false;
+        this.isStatic = false;
+        this.isRootInsert = true;
+        this.isComment = false;
+        this.isCloned = false;
+        this.isOnce = false;
+        this.asyncFactory = asyncFactory;
+        this.asyncMeta = undefined;
+        this.isAsyncPlaceholder = false;
+    };
+    //==============================虚拟节点结束==================================
 
     //=======================执行render方法依赖的方法==================================
 
     function isObject(obj) {
         return obj !== null && typeof obj === 'object'
-    }
-
-    /**
-     * render方法执行的上下文对象，里面保存了render方法执行所需要的所有方法
-     * @constructor
-     */
-    function FunctionalRenderContext() {
-
     }
 
     /**
@@ -1821,14 +1855,9 @@
         target._q = looseEqual;//比较是否相等
         target._i = looseIndexOf;//检索数组中是否有值等于val
         target._m = renderStatic;//渲染静态节点
-        target._b = bindObjectProps;
-        target._v = createTextVNode;
-        target._e = createEmptyVNode;
-        target._u = resolveScopedSlots;
-        target._g = bindObjectListeners;
+        target._v = createTextVNode;//创建纯文本vnode
+        target._e = createEmptyVNode;//创建空vnode
     }
-
-    // installRenderHelpers(FunctionalRenderContext.prototype);
 
     /**
      * _n(val) 将val转换为number,如果不是number就返回val
@@ -1978,6 +2007,37 @@
     }
 
     /**
+     * 创建文本vnode
+     * 如<div class="test">static</div>的render方法是_c('div',{staticClass:"test"},[_v("static")])
+     * _v("static")标识的就是创建一个文本为static的纯文本vnode
+     * @param val           值
+     * @return {VNode}
+     */
+    function createTextVNode(val) {
+        return new VNode(undefined, undefined, undefined, String(val))
+    }
+
+    /**
+     * 创建一个空的vnode
+     * <div class="test">
+     *     <div v-if="test">if</div>
+     *     <div v-else-if="test1">elseif</div>
+     * </div>
+     * 的render方法是：
+     * _c('div',{staticClass:"test"},[(test)?_c('div',[_v("if")]):(test1)?_c('div',[_v("elseif")]):_e()])
+     * 当if和else-if都不满足时执行_e()创建一个空的vnode
+     * @param text
+     * @return {VNode}
+     */
+    var createEmptyVNode = function (text) {
+        if (text === void 0) text = '';
+        var node = new VNode();
+        node.text = text;
+        node.isComment = true;
+        return node
+    };
+
+    /**
      * 克隆vnode栈
      * @param vnodes    vnode数组
      * @param deep
@@ -2030,9 +2090,7 @@
             }
         }
         return cloned
-    }
-
-
+    };
 
     function markStatic(tree, key, isOnce) {
         if (Array.isArray(tree)) {
@@ -2108,83 +2166,89 @@
         return _createElement(context, tag, data, children, normalizationType);
     }
 
-    // function _createElement(context, tag, data, children, normalizationType) {
-    //     if (isDef(data) && isDef((data).__ob__)) {
-    //         "development" !== 'production' && warn(
-    //             "Avoid using observed data object as vnode data: " + (JSON.stringify(data)) + "\n" +
-    //             'Always create fresh vnode data objects in each render!',
-    //             context
-    //         );
-    //         return createEmptyVNode()
-    //     }
-    //     // object syntax in v-bind
-    //     if (isDef(data) && isDef(data.is)) {
-    //         tag = data.is;
-    //     }
-    //     if (!tag) {
-    //         // in case of component :is set to falsy value
-    //         return createEmptyVNode()
-    //     }
-    //     // warn against non-primitive key
-    //     if ("development" !== 'production' &&
-    //         isDef(data) && isDef(data.key) && !isPrimitive(data.key)
-    //     ) {
-    //         {
-    //             warn(
-    //                 'Avoid using non-primitive value as key, ' +
-    //                 'use string/number value instead.',
-    //                 context
-    //             );
-    //         }
-    //     }
-    //     // support single function children as default scoped slot
-    //     if (Array.isArray(children) &&
-    //         typeof children[0] === 'function'
-    //     ) {
-    //         data = data || {};
-    //         data.scopedSlots = {default: children[0]};
-    //         children.length = 0;
-    //     }
-    //     if (normalizationType === ALWAYS_NORMALIZE) {
-    //         children = normalizeChildren(children);
-    //     } else if (normalizationType === SIMPLE_NORMALIZE) {
-    //         children = simpleNormalizeChildren(children);
-    //     }
-    //     var vnode, ns;
-    //     if (typeof tag === 'string') {
-    //         var Ctor;
-    //         ns = (context.$vnode && context.$vnode.ns) || config.getTagNamespace(tag);
-    //         if (config.isReservedTag(tag)) {
-    //             // platform built-in elements
-    //             vnode = new VNode(
-    //                 config.parsePlatformTagName(tag), data, children,
-    //                 undefined, undefined, context
-    //             );
-    //         } else if (isDef(Ctor = resolveAsset(context.$options, 'components', tag))) {
-    //             // component
-    //             vnode = createComponent(Ctor, data, context, children, tag);
-    //         } else {
-    //             // unknown or unlisted namespaced elements
-    //             // check at runtime because it may get assigned a namespace when its
-    //             // parent normalizes children
-    //             vnode = new VNode(
-    //                 tag, data, children,
-    //                 undefined, undefined, context
-    //             );
-    //         }
-    //     } else {
-    //         // direct component options / constructor
-    //         vnode = createComponent(tag, data, context, children);
-    //     }
-    //     if (isDef(vnode)) {
-    //         if (ns) {
-    //             applyNS(vnode, ns);
-    //         }
-    //         return vnode
-    //     } else {
-    //         return createEmptyVNode()
-    //     }
-    // }
+    function _createElement(context, tag, data, children, normalizationType) {
+        console.log(context);
+        console.log(tag);
+        console.log(data);
+        console.log(children);
+        console.log(normalizationType);
+
+        // if (isDef(data) && isDef((data).__ob__)) {
+        //     "development" !== 'production' && warn(
+        //         "Avoid using observed data object as vnode data: " + (JSON.stringify(data)) + "\n" +
+        //         'Always create fresh vnode data objects in each render!',
+        //         context
+        //     );
+        //     return createEmptyVNode()
+        // }
+        // // object syntax in v-bind
+        // if (isDef(data) && isDef(data.is)) {
+        //     tag = data.is;
+        // }
+        // if (!tag) {
+        //     // in case of component :is set to falsy value
+        //     return createEmptyVNode()
+        // }
+        // // warn against non-primitive key
+        // if ("development" !== 'production' &&
+        //     isDef(data) && isDef(data.key) && !isPrimitive(data.key)
+        // ) {
+        //     {
+        //         warn(
+        //             'Avoid using non-primitive value as key, ' +
+        //             'use string/number value instead.',
+        //             context
+        //         );
+        //     }
+        // }
+        // // support single function children as default scoped slot
+        // if (Array.isArray(children) &&
+        //     typeof children[0] === 'function'
+        // ) {
+        //     data = data || {};
+        //     data.scopedSlots = {default: children[0]};
+        //     children.length = 0;
+        // }
+        // if (normalizationType === ALWAYS_NORMALIZE) {
+        //     children = normalizeChildren(children);
+        // } else if (normalizationType === SIMPLE_NORMALIZE) {
+        //     children = simpleNormalizeChildren(children);
+        // }
+        // var vnode, ns;
+        // if (typeof tag === 'string') {
+        //     var Ctor;
+        //     ns = (context.$vnode && context.$vnode.ns) || config.getTagNamespace(tag);
+        //     if (config.isReservedTag(tag)) {
+        //         // platform built-in elements
+        //         vnode = new VNode(
+        //             config.parsePlatformTagName(tag), data, children,
+        //             undefined, undefined, context
+        //         );
+        //     } else if (isDef(Ctor = resolveAsset(context.$options, 'components', tag))) {
+        //         // component
+        //         vnode = createComponent(Ctor, data, context, children, tag);
+        //     } else {
+        //         // unknown or unlisted namespaced elements
+        //         // check at runtime because it may get assigned a namespace when its
+        //         // parent normalizes children
+        //         vnode = new VNode(
+        //             tag, data, children,
+        //             undefined, undefined, context
+        //         );
+        //     }
+        // } else {
+        //     // direct component options / constructor
+        //     vnode = createComponent(tag, data, context, children);
+        // }
+        // if (isDef(vnode)) {
+        //     if (ns) {
+        //         applyNS(vnode, ns);
+        //     }
+        //     return vnode
+        // } else {
+        //     return createEmptyVNode()
+        // }
+    }
 
 
     /**
@@ -2194,16 +2258,34 @@
      */
     function He(options) {
         this.$options = options;
+        this.data = options.data;
         this._staticTrees = null;//初始化静态树
-        this.$createElement = function (a, b, c, d) {
-            return createElement(vm, a, b, c, d, true);
-        };
-        this._c = function (a, b, c, d) {
-            return createElement(vm, a, b, c, d, false);
-        };
-        // initProxy(this);
+        init(this);
+        this._disposeData();
         this.$mount(false);
     }
+
+    function init(vm) {
+        vm.$createElement = function (a, b, c, d) {
+            return createElement(vm, a, b, c, d, true);
+        };
+        vm._c = function (a, b, c, d) {
+            return createElement(vm, a, b, c, d, false);
+        };
+    }
+
+    He.prototype._disposeData = function () {
+        var keys = Object.keys(this.data);
+        //循环给每一个数据添加监听器
+        for (var i = 0, l = keys.length; i < l; i++) {
+            this[keys[i]] = data[keys[i]];
+        }
+    };
+
+    /**
+     * 将执行render需要的相关内部方法安装到原型上
+     */
+    installRenderHelpers(He.prototype);
 
     // /**
     //  * 更新虚拟dom的方法
@@ -2258,7 +2340,7 @@
     // };
 
     /**
-     *
+     * 用来执行编译template后生成的render方法
      * @return {*}
      * @private
      */
@@ -2270,8 +2352,6 @@
         var render = ref.render;
         // 父虚拟dom
         var _parentVnode = ref._parentVnode;
-
-        vm.$scopedSlots = (_parentVnode && _parentVnode.data.scopedSlots) || emptyObject;
 
         vm.$vnode = _parentVnode;
 
@@ -2313,7 +2393,7 @@
         //     vm._update(vm._render(), hydrating);
         // };
 
-        // vm._render();
+        vm._render();
 
         // new Watcher(vm, updateComponent, noop, null, true /* isRenderWatcher */);
         // hydrating = false;
