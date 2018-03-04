@@ -121,6 +121,43 @@
         return v !== undefined && v !== null
     }
 
+    var _toString = Object.prototype.toString;
+
+    /**
+     * 校验是不是一个[object Object]类型
+     */
+    function isPlainObject(obj) {
+        return _toString.call(obj) === '[object Object]';
+    }
+
+    var hasOwnProperty = Object.prototype.hasOwnProperty;
+
+    /**
+     * 校验key是不是obj的属性名（不包含原型链）
+     */
+    function hasOwn(obj, key) {
+        return hasOwnProperty.call(obj, key);
+    }
+
+    /**
+     * 给obj添加key属性值位val
+     * @param obj
+     * @param key
+     * @param val
+     * @param enumerable
+     */
+    function def(obj, key, val, enumerable) {
+        Object.defineProperty(obj, key, {
+            value: val,//值
+            enumerable: !!enumerable, //可枚举属性
+            writable: true,//可写
+            configurable: true//可被删除
+        });
+    }
+
+    // 是否有__proto__原型实例属性
+    var hasProto = '__proto__' in {};
+
     //缓存器将fn入参的执行结果缓存起来如
     // var cachefn = cached(function (add) {
     //     return add*2;
@@ -1787,13 +1824,12 @@
         }
 
         return {
+            // 编译模板生成AST,render方法,静态树渲染方法
             compile: compile,
+            // 将模板编译成方法的方法,当方法执行时返回可执行的render方法，AST，静态render方法
             compileToFunctions: createCompileToFunctionFn(compile)
         }
     }
-
-    var ref$1 = createCompiler();
-    var compileToFunctions = ref$1.compileToFunctions;
 
 
     //==============================解析模板结束==================================
@@ -2250,20 +2286,8 @@
         // }
     }
 
+    //==========================创建vnode的方法（结束）===============================
 
-    /**
-     * 组件入口
-     * @param options
-     * @constructor
-     */
-    function He(options) {
-        this.$options = options;
-        this.data = options.data;
-        this._staticTrees = null;//初始化静态树
-        init(this);
-        this._disposeData();
-        this.$mount(false);
-    }
 
     function init(vm) {
         vm.$createElement = function (a, b, c, d) {
@@ -2274,18 +2298,230 @@
         };
     }
 
-    He.prototype._disposeData = function () {
-        var keys = Object.keys(this.data);
-        //循环给每一个数据添加监听器
-        for (var i = 0, l = keys.length; i < l; i++) {
-            this[keys[i]] = data[keys[i]];
-        }
-    };
+    /**
+     * He类
+     * @param options
+     * @constructor
+     */
+    function He(options) {
+        // 初始化时的选项
+        this.$options = options;
+        // 数据
+        this.$data = options.data;
+        // 如果是静态树的话保存到该属性中
+        this._staticTrees = null;
+        // 初始化在he对象下的其他方法
+        init(this);
+        // 处理数据添加数据拦截方法
+        this._initData(this);
+        // 生成执行render方法
+        this.$mount(false);
+    }
 
     /**
      * 将执行render需要的相关内部方法安装到原型上
      */
     installRenderHelpers(He.prototype);
+
+    /**
+     * 编译模板静态方法
+     * 生成AST,对应模板的可执行render方法，以及静态节点可执行render方法
+     */
+    He.compile = createCompiler().compileToFunctions;
+
+
+    // 处理数据添加数据拦截方法
+    He.prototype._initData = function (vm) {
+        var data = vm.$options.data;
+        data = vm._data = data || {};
+        if (!isPlainObject(data)) {
+            data = {};
+            baseWarn('data不是一个[object Object]类型');
+        }
+        // 需要监听数据的键值数组
+        var keys = Object.keys(data);
+        var i = keys.length;
+        while (i--) {
+            var key = keys[i];
+            // 给第一层数据添加set get方法
+            proxy(vm, "_data", key);
+        }
+        // 给数据添加观察者对象并添加到__ob__属性下，true表示是根节点
+        observe(data, true);
+    };
+
+    /**
+     * 基础数据拦截器对象
+     * @type {{enumerable: boolean, configurable: boolean, get: noop, set: noop}}
+     */
+    var sharedPropertyDefinition = {
+        enumerable: true,
+        configurable: true,
+        get: noop,
+        set: noop
+    };
+
+    /**
+     * 给属性添加set get数据拦截方法
+     * @param target            要拦截的数据对象
+     * @param sourceKey         要拦截的源键值 _data(vm._data)
+     * @param key               要拦截的键值 name(vm._data.name)
+     */
+    function proxy(target, sourceKey, key) {
+        sharedPropertyDefinition.get = function proxyGetter() {
+            return this[sourceKey][key];
+        };
+        sharedPropertyDefinition.set = function proxySetter(val) {
+            this[sourceKey][key] = val;
+        };
+        // 给数据添加set get方法
+        Object.defineProperty(target, key, sharedPropertyDefinition);
+    }
+
+    /**
+     * 直接target的原型实例替换为src
+     * @param target
+     * @param src
+     */
+    function protoAugment(target, src) {
+        target.__proto__ = src;
+    }
+
+    /**
+     * 将src中的keys方法拷贝到target对象中
+     * @param target
+     * @param src
+     * @param keys
+     */
+    function copyAugment(target, src, keys) {
+        for (var i = 0, l = keys.length; i < l; i++) {
+            var key = keys[i];
+            def(target, key, src[key]);
+        }
+    }
+
+    // 数组对象原型'push','pop','shift','unshift','splice','sort','reverse'里面包含着这些会改变数组结构的方法
+    var arrayProto = Array.prototype;
+    // 重写包装
+    var arrayMethods = Object.create(arrayProto);
+    [
+        'push',
+        'pop',
+        'shift',
+        'unshift',
+        'splice',
+        'sort',
+        'reverse'
+    ].forEach(function (method) {
+        // 对应的方法源
+        var original = arrayProto[method];
+        // 重写'push','pop','shift','unshift','splice','sort','reverse'这些会改变数组结构的方法
+        // 给arrayMethods添加method方法
+        def(arrayMethods, method, function mutator() {
+            var args = [],
+                len = arguments.length;
+            while (len--) args[len] = arguments[len];
+            // 调用父类的方法，类似于java的super.方法名();
+            var result = original.apply(this, args);
+            // 取出该数据的观察者对象
+            var ob = this.__ob__;
+            var inserted;
+            switch (method) {
+                case 'push':
+                case 'unshift':
+                    inserted = args;
+                    break;
+                case 'splice':
+                    inserted = args.slice(2);
+                    break
+            }
+            if (inserted) {
+                ob.observeArray(inserted);
+            }
+            // 通知数据发生改变
+            ob.dep.notify();
+            return result;
+        });
+    });
+
+    // 获取arrayMethods中被重写的方法'push','pop','shift','unshift','splice','sort','reverse'
+    var arrayKeys = Object.getOwnPropertyNames(arrayMethods);
+
+    /**
+     * 观察者状态
+     * @type {{shouldConvert: boolean}}
+     */
+    var observerState = {
+        shouldConvert: true
+    };
+
+    /**
+     * 创建数据观察者对象
+     * @param value             数据对象
+     * @param asRootData        是不是根数据
+     * @returns {*}
+     */
+    function observe(value, asRootData) {
+        if (!isObject(value) || value instanceof VNode) {
+            return;
+        }
+        var ob;
+        // 检查value上是否有__ob__属性并是Observer的实例
+        if (hasOwn(value, '__ob__') && value.__ob__ instanceof Observer) {
+            // 该数据已经有观察者对象
+            ob = value.__ob__;
+        }
+        // 数据可转变&&（数据是数组||普通对象）&& 数据可扩展
+        else if (observerState.shouldConvert && (Array.isArray(value) || isPlainObject(value)) && Object.isExtensible(value)) {
+            ob = new Observer(value);
+        }
+        // 如果是根数据
+        if (asRootData && ob) {
+            ob.vmCount++;
+        }
+        return ob;
+    }
+
+    /**
+     * 数据观察者对象
+     * @param value         需要拦截的数据
+     * @constructor
+     */
+    var Observer = function Observer(value) {
+        this.value = value;
+        this.dep = new Dep();
+        this.vmCount = 0;
+        //给value添加__ob__属性值为当前Observer实例
+        def(value, '__ob__', this);
+        if (Array.isArray(value)) {
+            // 如果value是数组，重写数组上可以改变数组值的方法'push','pop',
+            // 'shift','unshift','splice','sort','reverse';
+            var augment = hasProto ? protoAugment : copyAugment;
+            augment(value, arrayMethods, arrayKeys);
+            this.observeArray(value);
+        } else {
+            // 对象
+            this.walk(value);
+        }
+    };
+
+    Observer.prototype.walk = function walk(obj) {
+        var keys = Object.keys(obj);
+        for (var i = 0; i < keys.length; i++) {
+            defineReactive(obj, keys[i], obj[keys[i]]);
+        }
+    };
+
+    /**
+     * 如果是数组循环给栈中的元素添加拦截方法
+     * @param items
+     */
+    Observer.prototype.observeArray = function observeArray(items) {
+        for (var i = 0, l = items.length; i < l; i++) {
+            observe(items[i]);
+        }
+    };
+
 
     // /**
     //  * 更新虚拟dom的方法
@@ -2420,7 +2656,7 @@
         if (template) {
 
             // 将模板编译为render方法和ast
-            var ref = compileToFunctions(template, {});
+            var ref = He.compile(template, {});
             var render = ref.render;
             var staticRenderFns = ref.staticRenderFns;
             var ast = ref.ast;
@@ -2443,11 +2679,6 @@
         return objE.children[0];
     };
 
-    /**
-     * 编译模板方法
-     * 生成AST,对应模板的render方法，以及静态根节点方法栈
-     */
-    He.compile = compileToFunctions;
 
     window.testparse = He;
 
