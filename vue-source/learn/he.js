@@ -140,6 +140,13 @@
     }
 
     /**
+     * 校验Ctor是不是一个native code
+     */
+    function isNative(Ctor) {
+        return typeof Ctor === 'function' && /native code/.test(Ctor.toString())
+    }
+
+    /**
      * 给obj添加key属性值位val
      * @param obj
      * @param key
@@ -2203,11 +2210,15 @@
     }
 
     function _createElement(context, tag, data, children, normalizationType) {
-        console.log(context);
-        console.log(tag);
-        console.log(data);
-        console.log(children);
-        console.log(normalizationType);
+        var ss = {
+            'context': context,
+            'tag': tag,
+            'data': data,
+            'children': children,
+            'normalizationType': normalizationType
+        };
+        console.log(ss);
+        return ss;
 
         // if (isDef(data) && isDef((data).__ob__)) {
         //     "development" !== 'production' && warn(
@@ -2306,10 +2317,10 @@
     function He(options) {
         // 初始化时的选项
         this.$options = options;
-        // 数据
-        this.$data = options.data;
         // 如果是静态树的话保存到该属性中
         this._staticTrees = null;
+        // 用来保存vnode观察者的栈
+        this._watchers = [];
         // 初始化在he对象下的其他方法
         init(this);
         // 处理数据添加数据拦截方法
@@ -2349,7 +2360,203 @@
         // 给数据添加观察者对象并添加到__ob__属性下，true表示是根节点
         observe(data, true);
     };
+    /**
+     * 更新虚拟dom的方法
+     * @param vnode         执行render生成的vnode
+     * @param hydrating
+     * @private
+     */
+    He.prototype._update = function (vnode, hydrating) {
 
+        console.log('更新虚拟dom的方法');
+        // var vm = this;
+        //
+        // // 是否执行上下文中的生命周期方法
+        // if (vm._isMounted) {
+        //     callHook(vm, 'beforeUpdate');
+        // }
+        //
+        // // 模板对应的dom
+        // var prevEl = vm.$el;
+        // var prevVnode = vm._vnode;
+        // var prevActiveInstance = activeInstance;
+        // activeInstance = vm;
+        // vm._vnode = vnode;
+        // // Vue.prototype.__patch__ is injected in entry points
+        // // based on the rendering backend used.
+        // if (!prevVnode) {
+        //     // initial render
+        //     vm.$el = vm.__patch__(
+        //         vm.$el, vnode, hydrating, false /* removeOnly */,
+        //         vm.$options._parentElm,
+        //         vm.$options._refElm
+        //     );
+        //     // no need for the ref nodes after initial patch
+        //     // this prevents keeping a detached DOM tree in memory (#5851)
+        //     vm.$options._parentElm = vm.$options._refElm = null;
+        // } else {
+        //     // updates
+        //     vm.$el = vm.__patch__(prevVnode, vnode);
+        // }
+        // activeInstance = prevActiveInstance;
+        // // update __vue__ reference
+        // if (prevEl) {
+        //     prevEl.__vue__ = null;
+        // }
+        // if (vm.$el) {
+        //     vm.$el.__vue__ = vm;
+        // }
+        // // if parent is an HOC, update its $el as well
+        // if (vm.$vnode && vm.$parent && vm.$vnode === vm.$parent._vnode) {
+        //     vm.$parent.$el = vm.$el;
+        // }
+        // // updated hook is called by the scheduler to ensure that children are
+        // // updated in a parent's updated hook.
+    };
+
+    /**
+     * 用来执行编译template后生成的render方法
+     * @return {*}
+     * @private
+     */
+    He.prototype._render = function () {
+
+        var vm = this;
+        var ref = vm.$options;
+        // 模板生成的render方法
+        var render = ref.render;
+        // 父虚拟dom
+        var _parentVnode = ref._parentVnode;
+        vm.$vnode = _parentVnode;
+        var vnode = render.call(vm, vm.$createElement);
+        vnode.parent = _parentVnode;
+        return vnode
+    };
+
+    /**
+     * 增加编译
+     * @param vm 组件上下文对象
+     * @param el dom对象
+     * @param hydrating
+     * @return {*}
+     */
+    function mountComponent(vm, template, hydrating) {
+
+        // 将模板转换为dom对象
+        vm.$el = vm.parseDom(template);
+
+        // 执行vm中的beforeMount生命周期方法
+        callHook(vm, 'beforeMount');
+
+        // 更新组件的方法
+        var updateComponent = function () {
+            vm._update(vm._render(), hydrating);
+        };
+
+        new Watcher(vm, updateComponent, noop, null, true);
+        // hydrating = false;
+        //
+        // // manually mounted instance, call mounted on self
+        // // mounted is called for render-created child components in its inserted hook
+        // if (vm.$vnode == null) {
+        //     vm._isMounted = true;
+        //     // 执行vm中的mounted生命周期方法
+        //     callHook(vm, 'mounted');
+        // }
+        return vm;
+    }
+
+    /**
+     * 模板解析为ast,render方法，静态根节点render方法
+     * 并挂载到vm（this）上
+     * @type {*}
+     */
+    He.prototype.$mount = function (hydrating) {
+        var options = this.$options;
+        // 模板
+        var template = options.template;
+        if (template) {
+
+            // 将模板编译为render方法和ast
+            var ref = He.compile(template, {});
+            var render = ref.render;
+            var staticRenderFns = ref.staticRenderFns;
+            var ast = ref.ast;
+            options.render = render;
+            options.staticRenderFns = staticRenderFns;
+            options.ast = ast;
+        }
+
+        return mountComponent.call(this, this, template, hydrating);
+    };
+
+    /**
+     * 将html转换为dom
+     * @param html
+     * @return {Element}
+     */
+    He.prototype.parseDom = function (html) {
+        var objE = document.createElement("div");
+        objE.innerHTML = html;
+        return objE.children[0];
+    };
+
+    //=============================更新vnode的容器===================================
+    var uid = 0;
+
+    /**
+     * 容器对象
+     * @constructor
+     */
+    var Dep = function Dep() {
+        this.id = uid++;
+        this.subs = [];
+    };
+
+    Dep.prototype.addSub = function addSub(sub) {
+        this.subs.push(sub);
+    };
+
+    Dep.prototype.removeSub = function removeSub(sub) {
+        remove(this.subs, sub);
+    };
+
+    Dep.prototype.depend = function depend() {
+        if (Dep.target) {
+            Dep.target.addDep(this);
+        }
+    };
+
+    Dep.prototype.notify = function notify() {
+        // 遍历容器栈中页面观察者对象进行进行页面更新
+        var subs = this.subs.slice();
+        for (var i = 0, l = subs.length; i < l; i++) {
+            subs[i].update();
+        }
+    };
+
+    /**
+     * 静态属性用来缓存当前需要和数据监听者关联的dom观察者实例
+     * 通过主动触发数据监听者的get方法来建立数据监听者和dom观察者的联系
+     */
+    Dep.target = null;
+    var targetStack = [];
+
+    function pushTarget(_target) {
+        if (Dep.target) {
+            targetStack.push(Dep.target);
+        }
+        Dep.target = _target;
+    }
+
+    function popTarget() {
+        Dep.target = targetStack.pop();
+    }
+
+    //=============================更新vnode的容器结束=================================
+
+
+    //=============================给数据添加数据拦截者=================================
     /**
      * 基础数据拦截器对象
      * @type {{enumerable: boolean, configurable: boolean, get: noop, set: noop}}
@@ -2505,15 +2712,8 @@
         }
     };
 
-    Observer.prototype.walk = function walk(obj) {
-        var keys = Object.keys(obj);
-        for (var i = 0; i < keys.length; i++) {
-            defineReactive(obj, keys[i], obj[keys[i]]);
-        }
-    };
-
     /**
-     * 如果是数组循环给栈中的元素添加拦截方法
+     * 观察数组的方法:循环给栈中的元素添加拦截方法
      * @param items
      */
     Observer.prototype.observeArray = function observeArray(items) {
@@ -2522,163 +2722,359 @@
         }
     };
 
-
-    // /**
-    //  * 更新虚拟dom的方法
-    //  * @param vnode         执行render生成的vnode
-    //  * @param hydrating
-    //  * @private
-    //  */
-    // He.prototype._update = function (vnode, hydrating) {
-    //     var vm = this;
-    //
-    //     // 是否执行上下文中的生命周期方法
-    //     if (vm._isMounted) {
-    //         callHook(vm, 'beforeUpdate');
-    //     }
-    //
-    //     // 模板对应的dom
-    //     var prevEl = vm.$el;
-    //     var prevVnode = vm._vnode;
-    //     var prevActiveInstance = activeInstance;
-    //     activeInstance = vm;
-    //     vm._vnode = vnode;
-    //     // Vue.prototype.__patch__ is injected in entry points
-    //     // based on the rendering backend used.
-    //     if (!prevVnode) {
-    //         // initial render
-    //         vm.$el = vm.__patch__(
-    //             vm.$el, vnode, hydrating, false /* removeOnly */,
-    //             vm.$options._parentElm,
-    //             vm.$options._refElm
-    //         );
-    //         // no need for the ref nodes after initial patch
-    //         // this prevents keeping a detached DOM tree in memory (#5851)
-    //         vm.$options._parentElm = vm.$options._refElm = null;
-    //     } else {
-    //         // updates
-    //         vm.$el = vm.__patch__(prevVnode, vnode);
-    //     }
-    //     activeInstance = prevActiveInstance;
-    //     // update __vue__ reference
-    //     if (prevEl) {
-    //         prevEl.__vue__ = null;
-    //     }
-    //     if (vm.$el) {
-    //         vm.$el.__vue__ = vm;
-    //     }
-    //     // if parent is an HOC, update its $el as well
-    //     if (vm.$vnode && vm.$parent && vm.$vnode === vm.$parent._vnode) {
-    //         vm.$parent.$el = vm.$el;
-    //     }
-    //     // updated hook is called by the scheduler to ensure that children are
-    //     // updated in a parent's updated hook.
-    // };
-
     /**
-     * 用来执行编译template后生成的render方法
-     * @return {*}
-     * @private
+     * 观察对象的方法:循环给每个属性添加拦截方法
+     * @param obj
      */
-    He.prototype._render = function () {
-
-        var vm = this;
-        var ref = vm.$options;
-        // 模板生成的render方法
-        var render = ref.render;
-        // 父虚拟dom
-        var _parentVnode = ref._parentVnode;
-
-        vm.$vnode = _parentVnode;
-
-        var vnode = render.call(vm, vm.$createElement);
-
-        vnode.parent = _parentVnode;
-
-        return vnode
+    Observer.prototype.walk = function walk(obj) {
+        var keys = Object.keys(obj);
+        for (var i = 0; i < keys.length; i++) {
+            defineReactive(obj, keys[i], obj[keys[i]]);
+        }
     };
 
-    // /**
-    //  * 公共的mount方法
-    //  * @param el
-    //  * @param hydrating
-    //  * @return {*}
-    //  */
-    // He.prototype.$mount = function (el, hydrating) {
-    //     el = el && inBrowser ? query(el) : undefined;
-    //     return mountComponent(this, el, hydrating)
-    // };
-
     /**
-     * 增加编译
-     * @param vm 组件上下文对象
-     * @param el dom对象
-     * @param hydrating
-     * @return {*}
+     * 循环给数组下所有的属性对应的数据监听者容器中增加相应的页面观察者对象
+     * @param value
      */
-    function mountComponent(vm, template, hydrating) {
-
-        // 将模板转换为dom对象
-        vm.$el = vm.parseDom(template);
-
-        // 执行vm中的beforeMount生命周期方法
-        callHook(vm, 'beforeMount');
-
-        // 更新组件的方法
-        // var updateComponent = function () {
-        //     vm._update(vm._render(), hydrating);
-        // };
-
-        vm._render();
-
-        // new Watcher(vm, updateComponent, noop, null, true /* isRenderWatcher */);
-        // hydrating = false;
-        //
-        // // manually mounted instance, call mounted on self
-        // // mounted is called for render-created child components in its inserted hook
-        // if (vm.$vnode == null) {
-        //     vm._isMounted = true;
-        //     // 执行vm中的mounted生命周期方法
-        //     callHook(vm, 'mounted');
-        // }
-        return vm;
+    function dependArray(value) {
+        var e;
+        for (var i = 0, l = value.length; i < l; i++) {
+            e = value[i];
+            e && e.__ob__ && e.__ob__.dep.depend();
+            if (Array.isArray(e)) {
+                dependArray(e);
+            }
+        }
     }
 
     /**
-     * 模板解析为ast,render方法，静态根节点render方法
-     * 并挂载到vm（this）上
-     * @type {*}
+     * 给obj中的key属性添加拦截
+     * @param obj
+     * @param key
+     * @param val
+     * @param customSetter
+     * @param shallow
      */
-    He.prototype.$mount = function (hydrating) {
-        var options = this.$options;
-        // 模板
-        var template = options.template;
-        if (template) {
+    function defineReactive(obj, key, val, customSetter, shallow) {
 
-            // 将模板编译为render方法和ast
-            var ref = He.compile(template, {});
-            var render = ref.render;
-            var staticRenderFns = ref.staticRenderFns;
-            var ast = ref.ast;
-            options.render = render;
-            options.staticRenderFns = staticRenderFns;
-            options.ast = ast;
+        // 当数据改变时需要驱动哪些页面进行改变的容器
+        var dep = new Dep();
+        // 获取对应键值的属性描述器
+        var property = Object.getOwnPropertyDescriptor(obj, key);
+        if (property && property.configurable === false) {
+            return;
         }
 
-        return mountComponent.call(this, this, template, hydrating);
+        // 属性原本具有的setter，getter方法
+        var getter = property && property.get;
+        var setter = property && property.set;
+
+        // 调用observe方法给当前对应属性的子属性添加数据拦截
+        // 只有当val是[object Object]或者数组时才给其添加监视器
+        // 返回val的监视器对象
+        var childOb = !shallow && observe(val);
+
+        Object.defineProperty(obj, key, {
+            enumerable: true,//可for in遍历（可枚举）
+            configurable: true,//可删除
+            get: function reactiveGetter() {
+                // 如果添加监听器之前存在getter方法，就调用
+                var value = getter ? getter.call(obj) : val;
+                // 当页面观察者创建完后会主动调一次数据的get方法从而
+                // 让页面观察者和数据监听者建立联系
+                if (Dep.target) {
+                    dep.depend();
+                    // 父节点数据改变会引起子节点中全部更新
+                    if (childOb) {
+                        childOb.dep.depend();
+                        if (Array.isArray(value)) {
+                            dependArray(value);
+                        }
+                    }
+                }
+                return value;
+            },
+            set: function reactiveSetter(newVal) {
+                // 如果添加监听器之前存在getter方法，就调用
+                var value = getter ? getter.call(obj) : val;
+                // 如果值未发生改变
+                if (newVal === value) {
+                    return;
+                }
+                // 如果有set回调方法执行以下回调
+                if (customSetter) {
+                    customSetter();
+                }
+                // 设置新址
+                if (setter) {
+                    setter.call(obj, newVal);
+                } else {
+                    val = newVal;
+                }
+                // 调用observe方法给新值添加监听
+                childOb = !shallow && observe(newVal);
+                // 执行以下容器中
+                dep.notify();
+            }
+        });
+    }
+
+    //=============================给数据添加数据拦截者结束=================================
+
+
+    //======================================vnode观察者====================================
+
+    /**
+     * set判断是否有某属性
+     * has，判断是否有该属性
+     * add，添加属性
+     * clear，清除所有属性
+     */
+    var _Set;
+    if (typeof Set !== 'undefined' && isNative(Set)) {
+        _Set = Set;
+    } else {
+        _Set = (function () {
+            function Set() {
+                this.set = Object.create(null);
+            }
+
+            Set.prototype.has = function has(key) {
+                return this.set[key] === true
+            };
+            Set.prototype.add = function add(key) {
+                this.set[key] = true;
+            };
+            Set.prototype.clear = function clear() {
+                this.set = Object.create(null);
+            };
+
+            return Set;
+        }());
+    }
+
+    /**
+     * 观察者类 当页面render方法和update方法生成后创建观察者，
+     * 当数据改变时会调用相应观察者的expOrFn方法实现vnode的局部更新
+     * @param vm                    上下文对象
+     * @param expOrFn               更新页面的方法
+     * @param cb                    回调
+     * @param options               选型
+     * @param isRenderWatcher       是否是render方法的观察者
+     * @constructor
+     */
+    var Watcher = function Watcher(vm, expOrFn, cb, options, isRenderWatcher) {
+        this.vm = vm;
+        if (isRenderWatcher) {
+            // 给上下文对象_watcher挂载render方法观察者实例
+            vm._watcher = this;
+        }
+        // 上下文对象中观察者栈
+        vm._watchers.push(this);
+        this.cb = cb;
+        this.id = ++uid$2;
+        this.active = true;
+        this.dirty = this.lazy;
+        this.deps = [];
+        // 用于保存dep实例的栈
+        this.newDeps = [];
+        // 判断dep容器中是否保存了该vnode观察者实例
+        this.depIds = new _Set();
+        // 用于判断Dep id是否存在
+        this.newDepIds = new _Set();
+        this.expression = expOrFn.toString();
+        // 初始化getter方法为更新页面的方法
+        if (typeof expOrFn === 'function') {
+            this.getter = expOrFn;
+        } else {
+            baseWarn('更新页面的方法不是方法' + expOrFn);
+        }
+
+        this.value = this.get();
     };
 
     /**
-     * 将html转换为dom
-     * @param html
-     * @return {Element}
+     * 设置Dep中静态属性target为当前vnode观察者，
+     * 调用对应数据的getter方法建立数据监听者与vnode观察者之间的联系
+     * @return {*}
      */
-    He.prototype.parseDom = function (html) {
-        var objE = document.createElement("div");
-        objE.innerHTML = html;
-        return objE.children[0];
+    Watcher.prototype.get = function get() {
+        pushTarget(this);
+        var value;
+        var vm = this.vm;
+        try {
+            // 调用页面更新方法返回和页面相关的数据
+            value = this.getter.call(vm, vm);
+        } catch (e) {
+            baseWarn('在观察者(watcher)中更新页面的方法执行出错' + e);
+        } finally {
+            popTarget();
+            this.cleanupDeps();
+        }
+        return value;
     };
 
+    Watcher.prototype.cleanupDeps = function cleanupDeps() {
+        var this$1 = this;
+
+        var i = this.deps.length;
+        while (i--) {
+            var dep = this$1.deps[i];
+            if (!this$1.newDepIds.has(dep.id)) {
+                dep.removeSub(this$1);
+            }
+        }
+        var tmp = this.depIds;
+        this.depIds = this.newDepIds;
+        this.newDepIds = tmp;
+        this.newDepIds.clear();
+        tmp = this.deps;
+        this.deps = this.newDeps;
+        this.newDeps = tmp;
+        this.newDeps.length = 0;
+    };
+
+    /**
+     *
+     * vnode观察者与dep容器实例相互添加保存
+     * vnode观察者保存引用了该观察者的dep容器实例
+     * dep容器中保存了对应数据变换会触发哪些vnode观察者实例
+     * @param dep
+     */
+    Watcher.prototype.addDep = function addDep(dep) {
+        var id = dep.id;
+        if (!this.newDepIds.has(id)) {
+            this.newDepIds.add(id);
+            this.newDeps.push(dep);
+            if (!this.depIds.has(id)) {
+                //将观察者实例加入容器中
+                dep.addSub(this);
+            }
+        }
+    };
+
+    /**
+     * vnode监听者更新vnode方法
+     */
+    Watcher.prototype.update = function update() {
+        this.value = this.get();
+    };
+
+
+    // var callbacks = [];
+    // var pending = false;
+    // var useMacroTask = false;
+    // var queue = [];
+    // var has = {};
+    // var waiting = false;
+    // var flushing = false;
+    // function queueWatcher(watcher) {
+    //     var id = watcher.id;
+    //     if (has[id] == null) {
+    //         has[id] = true;
+    //         if (!flushing) {
+    //             queue.push(watcher);
+    //         } else {
+    //             var i = queue.length - 1;
+    //             while (i > index && queue[i].id > watcher.id) {
+    //                 i--;
+    //             }
+    //             queue.splice(i + 1, 0, watcher);
+    //         }
+    //         if (!waiting) {
+    //             waiting = true;
+    //             nextTick(flushSchedulerQueue);
+    //         }
+    //     }
+    // }
+    //
+    // function nextTick(cb, ctx) {
+    //     var _resolve;
+    //     callbacks.push(function () {
+    //         if (cb) {
+    //             try {
+    //                 cb.call(ctx);
+    //             } catch (e) {
+    //                 handleError(e, ctx, 'nextTick');
+    //             }
+    //         } else if (_resolve) {
+    //             _resolve(ctx);
+    //         }
+    //     });
+    //     if (!pending) {
+    //         pending = true;
+    //         if (useMacroTask) {
+    //             macroTimerFunc();
+    //         } else {
+    //             microTimerFunc();
+    //         }
+    //     }
+    //     // $flow-disable-line
+    //     if (!cb && typeof Promise !== 'undefined') {
+    //         return new Promise(function (resolve) {
+    //             _resolve = resolve;
+    //         })
+    //     }
+    // }
+    //
+    // function flushSchedulerQueue() {
+    //     flushing = true;
+    //     var watcher, id;
+    //
+    //     // Sort queue before flush.
+    //     // This ensures that:
+    //     // 1. Components are updated from parent to child. (because parent is always
+    //     //    created before the child)
+    //     // 2. A component's user watchers are run before its render watcher (because
+    //     //    user watchers are created before the render watcher)
+    //     // 3. If a component is destroyed during a parent component's watcher run,
+    //     //    its watchers can be skipped.
+    //     queue.sort(function (a, b) {
+    //         return a.id - b.id;
+    //     });
+    //
+    //     // do not cache length because more watchers might be pushed
+    //     // as we run existing watchers
+    //     for (index = 0; index < queue.length; index++) {
+    //         watcher = queue[index];
+    //         id = watcher.id;
+    //         has[id] = null;
+    //         watcher.run();
+    //         // in dev build, check and stop circular updates.
+    //         if ("development" !== 'production' && has[id] != null) {
+    //             circular[id] = (circular[id] || 0) + 1;
+    //             if (circular[id] > MAX_UPDATE_COUNT) {
+    //                 warn(
+    //                     'You may have an infinite update loop ' + (
+    //                         watcher.user
+    //                             ? ("in watcher with expression \"" + (watcher.expression) + "\"")
+    //                             : "in a component render function."
+    //                     ),
+    //                     watcher.vm
+    //                 );
+    //                 break
+    //             }
+    //         }
+    //     }
+    //
+    //     // keep copies of post queues before resetting state
+    //     var activatedQueue = activatedChildren.slice();
+    //     var updatedQueue = queue.slice();
+    //
+    //     resetSchedulerState();
+    //
+    //     // call component updated and activated hooks
+    //     callActivatedHooks(activatedQueue);
+    //     callUpdatedHooks(updatedQueue);
+    //
+    //     // devtool hook
+    //     /* istanbul ignore if */
+    //     if (devtools && config.devtools) {
+    //         devtools.emit('flush');
+    //     }
+    // }
+    //======================================vnode观察者结束====================================
 
     window.testparse = He;
 

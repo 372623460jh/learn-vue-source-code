@@ -6,6 +6,7 @@
 </head>
 <body>
 <div class="test" :class="test.test2">
+	{{message}}
 	<span v-for="item in test.test2">{{item.asd}}<br/></span>
 	<div v-if="test">if</div>
 	<div v-else-if="test1">elseif</div>
@@ -28,7 +29,7 @@
 <script>
 
     var template =
-        '<div class="test">' +
+        '<div class="test">{{message}}' +
         '   <span v-for="item in test.test2">{{item.asd}}</span>' +
         '   <div v-if="test">if</div>' +
         '   <div v-else-if="test1">elseif</div>' +
@@ -59,16 +60,23 @@
 
     //    console.log(window.testparse(template, {}));
 
-//    var ss = new window.testparse({
-//        template: template,
-//        data: data
-//    });
+        var ss = new window.testparse({
+            template: template,
+            data: data
+        });
+
+        setTimeout(function () {
+            ss._data.message = 'asdasdadasdad';
+        }, 3000);
 
 
-    var app = new Vue({
-        el: '.test',
-        data: data
-    });
+//    var app = new Vue({
+    //        el: '.test',
+    //        data: data
+    //    });
+    //    setTimeout(function () {
+    //        app._data.message = 'asdasdadasdad';
+    //    }, 3000);
 
     //
     //    var app1 = new Vue({

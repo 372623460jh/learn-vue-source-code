@@ -47,3 +47,15 @@ Object.defineProperty(arrayMethods, 'push', {
  * @type {Array}
  */
 var propArr = Object.getOwnPropertyNames(new Array(3));
+
+
+
+
+
+/**
+ * 获取对象中某属性的属性描述器
+ * @type {{test: string}}
+ */
+var obj = {test:'name'};
+var property = Object.getOwnPropertyDescriptor(obj, 'test');
+//获得该属性的描述器对象 {value: "name", writable: true, enumerable: true, configurable: true}
