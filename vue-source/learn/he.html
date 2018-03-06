@@ -60,23 +60,23 @@
 
     //    console.log(window.testparse(template, {}));
 
-        var ss = new window.testparse({
-            template: template,
-            data: data
-        });
+//        var ss = new window.testparse({
+//            template: template,
+//            data: data
+//        });
+//
+//        setTimeout(function () {
+//            ss._data.message = 'asdasdadasdad';
+//        }, 3000);
 
-        setTimeout(function () {
-            ss._data.message = 'asdasdadasdad';
-        }, 3000);
 
-
-//    var app = new Vue({
-    //        el: '.test',
-    //        data: data
-    //    });
-    //    setTimeout(function () {
-    //        app._data.message = 'asdasdadasdad';
-    //    }, 3000);
+    var app = new Vue({
+        el: '.test',
+        data: data
+    });
+    setTimeout(function () {
+        app._data.message = 'asdasdadasdad';
+    }, 3000);
 
     //
     //    var app1 = new Vue({
