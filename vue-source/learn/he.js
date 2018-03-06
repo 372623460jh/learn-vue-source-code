@@ -92,6 +92,10 @@
     var isIE = UA && /msie|trident/.test(UA);
     // 通过userAgent判断是不是edge浏览器
     var isEdge = UA && UA.indexOf('edge/') > 0;
+    // 是否是在Weex环境下
+    var inWeex = typeof WXEnvironment !== 'undefined' && !!WXEnvironment.platform;
+    // 获取weexPlatform信息
+    var weexPlatform = inWeex && WXEnvironment.platform.toLowerCase();
     // 通过userAgent判断是不是ios操作系统
     var isIOS = (UA && /iphone|ipad|ipod|ios/.test(UA)) || (weexPlatform === 'ios');
 
@@ -2422,7 +2426,6 @@
      * @private
      */
     He.prototype._render = function () {
-
         var vm = this;
         var ref = vm.$options;
         // 模板生成的render方法
@@ -2430,7 +2433,12 @@
         // 父虚拟dom
         var _parentVnode = ref._parentVnode;
         vm.$vnode = _parentVnode;
-        var vnode = render.call(vm, vm.$createElement);
+        var vnode;
+        try {
+            vnode = render.call(vm, vm.$createElement);
+        } catch (e) {
+            baseWarn('render执行出错');
+        }
         vnode.parent = _parentVnode;
         return vnode
     };
@@ -2455,16 +2463,14 @@
             vm._update(vm._render(), hydrating);
         };
 
+        /**
+         * 创建对应vnode的Watcher实例
+         * 当data发生改变时会触发Watcher实例的update方法重写调用
+         * vm._update(vm._render(), hydrating)生成新的vnode
+         */
         new Watcher(vm, updateComponent, noop, null, true);
-        // hydrating = false;
-        //
-        // // manually mounted instance, call mounted on self
-        // // mounted is called for render-created child components in its inserted hook
-        // if (vm.$vnode == null) {
-        //     vm._isMounted = true;
-        //     // 执行vm中的mounted生命周期方法
-        //     callHook(vm, 'mounted');
-        // }
+        hydrating = false;
+
         return vm;
     }
 
@@ -2503,8 +2509,23 @@
         return objE.children[0];
     };
 
-    //=============================更新vnode的容器===================================
+    //=============================vnode weacher容器===================================
     var uid = 0;
+
+    /**
+     * 移除数组中的某个元素
+     * @param arr
+     * @param item
+     * @returns {Array.<T>}
+     */
+    function remove(arr, item) {
+        if (arr.length) {
+            var index = arr.indexOf(item);
+            if (index > -1) {
+                return arr.splice(index, 1)
+            }
+        }
+    }
 
     /**
      * 容器对象
@@ -2523,14 +2544,21 @@
         remove(this.subs, sub);
     };
 
+    /**
+     * 创建数据监听者与vnode weacher之间的依赖关系
+     * 将vnode weacher添加到data observer中dev中的sub栈
+     * 将data observer添加到vnode weacher中的newDeps栈
+     */
     Dep.prototype.depend = function depend() {
         if (Dep.target) {
             Dep.target.addDep(this);
         }
     };
 
+    /**
+     * 遍历subs容器栈中页面vnode weacher实例进行页面更新
+     */
     Dep.prototype.notify = function notify() {
-        // 遍历容器栈中页面观察者对象进行进行页面更新
         var subs = this.subs.slice();
         for (var i = 0, l = subs.length; i < l; i++) {
             subs[i].update();
@@ -2544,6 +2572,10 @@
     Dep.target = null;
     var targetStack = [];
 
+    /**
+     * 添加缓存方法
+     * @param _target
+     */
     function pushTarget(_target) {
         if (Dep.target) {
             targetStack.push(Dep.target);
@@ -2551,11 +2583,15 @@
         Dep.target = _target;
     }
 
+    /**
+     * 移除缓存方法
+     * @param _target
+     */
     function popTarget() {
         Dep.target = targetStack.pop();
     }
 
-    //=============================更新vnode的容器结束=================================
+    //=============================vnode weacher容器结束=================================
 
 
     //=============================给数据添加数据拦截者=================================
@@ -2874,11 +2910,12 @@
         }
         // 上下文对象中观察者栈
         vm._watchers.push(this);
+        // 回调方法
         this.cb = cb;
+        // id
         this.id = ++uid$2;
+        // 标注当前Watcher实例是不是活动的
         this.active = true;
-        this.dirty = this.lazy;
-        this.deps = [];
         // 用于保存dep实例的栈
         this.newDeps = [];
         // 判断dep容器中是否保存了该vnode观察者实例
@@ -2892,7 +2929,6 @@
         } else {
             baseWarn('更新页面的方法不是方法' + expOrFn);
         }
-
         this.value = this.get();
     };
 
@@ -2912,29 +2948,8 @@
             baseWarn('在观察者(watcher)中更新页面的方法执行出错' + e);
         } finally {
             popTarget();
-            this.cleanupDeps();
         }
         return value;
-    };
-
-    Watcher.prototype.cleanupDeps = function cleanupDeps() {
-        var this$1 = this;
-
-        var i = this.deps.length;
-        while (i--) {
-            var dep = this$1.deps[i];
-            if (!this$1.newDepIds.has(dep.id)) {
-                dep.removeSub(this$1);
-            }
-        }
-        var tmp = this.depIds;
-        this.depIds = this.newDepIds;
-        this.newDepIds = tmp;
-        this.newDepIds.clear();
-        tmp = this.deps;
-        this.deps = this.newDeps;
-        this.newDeps = tmp;
-        this.newDeps.length = 0;
     };
 
     /**
@@ -2956,195 +2971,202 @@
     };
 
     /**
+     * 执行更新操作
+     */
+    Watcher.prototype.run = function run() {
+        if (this.active) {
+            // 调用get方法update vnode
+            var value = this.get();
+            if (value !== this.value || isObject(value) || this.deep) {
+                var oldValue = this.value;
+                this.value = value;
+                this.cb.call(this.vm, value, oldValue);
+            }
+        }
+    };
+
+    /**
      * vnode监听者更新vnode方法
      */
     Watcher.prototype.update = function update() {
-        /**
-         * 一个数据改变可能会触发多个vnode监听者的update方法而这多个方法其实都是执行update方法
-         * @type {*}
-         */
-        // this.value = this.get();
-        queueWatcher(this);
+        this.run();
     };
 
+    // // 回调方法任务栈
+    // var callbacks = [];
+    // // callbacks中的任务是否在执行标志
+    // var pending = false;
+    // // 保存Watcher实例的队列
+    // var queue = [];
+    // // 标识队列中是否有某个Watcher实例
+    // var has = {};
+    // var waiting = false;
+    // // queue栈是否根据watcher的id排序
+    // var flushing = false;
+    // var index = 0;
+    // // 用来记录queue中同一个id出现的次数
+    // var circular = {};
+    // // 最大更新总数
+    // var MAX_UPDATE_COUNT = 100;
+    // /**
+    //  * Watcher队列
+    //  * @param watcher
+    //  */
+    // function queueWatcher(watcher) {
+    //     var id = watcher.id;
+    //     // 用于防止队列总存在重复的watcher
+    //     if (has[id] == null) {
+    //         has[id] = true;
+    //         //queue栈是否根据watcher的id排序
+    //         if (!flushing) {
+    //             queue.push(watcher);
+    //         } else {
+    //             var i = queue.length - 1;
+    //             // 根据id在queue栈中排序插入
+    //             while (i > index && queue[i].id > watcher.id) {
+    //                 i--;
+    //             }
+    //             // 在queue[i+1]的位置插入watcher
+    //             queue.splice(i + 1, 0, watcher);
+    //         }
+    //         if (!waiting) {
+    //             waiting = true;
+    //             nextTick(flushSchedulerQueue);
+    //         }
+    //     }
+    // }
 
-    // 回调方法任务栈
-    var callbacks = [];
-    // callbacks中的任务是否在执行标志
-    var pending = false;
-    // 保存Watcher实例的队列
-    var queue = [];
-    // 标识队列中是否有某个Watcher实例
-    var has = {};
-    var waiting = false;
-    // queue栈是否根据watcher的id排序
-    var flushing = false;
-    var index = 0;
-    // 用来记录queue中同一个id出现的次数
-    var circular = {};
-    // 最大更新总数
-    var MAX_UPDATE_COUNT = 100;
+    // /**
+    //  * 使用微任务或者宏任务执行callbacks中的所有任务
+    //  * @param cb
+    //  * @param ctx
+    //  */
+    // function nextTick(cb, ctx) {
+    //     // 将cb回调的执行压入callbacks栈中
+    //     callbacks.push(function () {
+    //         if (cb) {
+    //             try {
+    //                 cb.call(ctx);
+    //             } catch (e) {
+    //                 baseWarn('nextTick中添加的callbacks中的方法执行出错');
+    //             }
+    //         }
+    //     });
+    //     // callbacks中的任务是否在执行标志
+    //     if (!pending) {
+    //         pending = true;
+    //         // 使用宏任务或微任务去执行flushCallbacks方法
+    //         if (useMacroTask) {
+    //             macroTimerFunc();
+    //         } else {
+    //             microTimerFunc();
+    //         }
+    //     }
+    // }
 
-    /**
-     * Watcher队列
-     * @param watcher
-     */
-    function queueWatcher(watcher) {
-        var id = watcher.id;
-        // 用于防止队列总存在重复的watcher
-        if (has[id] == null) {
-            has[id] = true;
-            //queue栈是否根据watcher的id排序
-            if (!flushing) {
-                queue.push(watcher);
-            } else {
-                var i = queue.length - 1;
-                // 根据id在queue栈中排序插入
-                while (i > index && queue[i].id > watcher.id) {
-                    i--;
-                }
-                // 在queue[i+1]的位置插入watcher
-                queue.splice(i + 1, 0, watcher);
-            }
-            if (!waiting) {
-                waiting = true;
-                nextTick(flushSchedulerQueue);
-            }
-        }
-    }
+    // function flushSchedulerQueue() {
+    //     //queue栈需要根据watcher的id排序
+    //     flushing = true;
+    //     var watcher, id;
+    //
+    //     // 将queue栈中的watcher根据id升续排序
+    //     queue.sort(function (a, b) {
+    //         return a.id - b.id;
+    //     });
+    //
+    //     // 循环执行queue栈中watcher的run方法
+    //     for (index = 0; index < queue.length; index++) {
+    //         watcher = queue[index];
+    //         id = watcher.id;
+    //         has[id] = null;
+    //         // 执行watcher的run方法
+    //         watcher.run();
+    //         // 同一个vnode watcher更新数超过了最大更新数限制
+    //         if (has[id] != null) {
+    //             circular[id] = (circular[id] || 0) + 1;
+    //             if (circular[id] > MAX_UPDATE_COUNT) {
+    //                 baseWarn('代码可能出现了更新循环在' + watcher.expression + '方法中');
+    //                 break;
+    //             }
+    //         }
+    //     }
+    //
+    //     // keep copies of post queues before resetting state
+    //     var activatedQueue = activatedChildren.slice();
+    //     var updatedQueue = queue.slice();
+    //
+    //     resetSchedulerState();
+    //
+    //     // call component updated and activated hooks
+    //     callActivatedHooks(activatedQueue);
+    //     callUpdatedHooks(updatedQueue);
+    //
+    //     // devtool hook
+    //     /* istanbul ignore if */
+    //     if (devtools && config.devtools) {
+    //         devtools.emit('flush');
+    //     }
+    // }
+    //======================================vnode观察者结束====================================
 
-    /**
-     * 使用微任务或者宏任务执行callbacks中的所有任务
-     * @param cb
-     * @param ctx
-     */
-    function nextTick(cb, ctx) {
-        // 将cb回调的执行压入callbacks栈中
-        callbacks.push(function () {
-            if (cb) {
-                try {
-                    cb.call(ctx);
-                } catch (e) {
-                    baseWarn('nextTick中添加的callbacks中的方法执行出错');
-                }
-            }
-        });
-        // callbacks中的任务是否在执行标志
-        if (!pending) {
-            pending = true;
-            // 使用宏任务或微任务去执行flushCallbacks方法
-            if (useMacroTask) {
-                macroTimerFunc();
-            } else {
-                microTimerFunc();
-            }
-        }
-    }
-
-    function flushSchedulerQueue() {
-        //queue栈需要根据watcher的id排序
-        flushing = true;
-        var watcher, id;
-
-        // 将queue栈中的watcher根据id升续排序
-        queue.sort(function (a, b) {
-            return a.id - b.id;
-        });
-
-        // 循环执行queue栈中watcher的run方法
-        for (index = 0; index < queue.length; index++) {
-            watcher = queue[index];
-            id = watcher.id;
-            has[id] = null;
-            // 执行watcher的run方法
-            watcher.run();
-            // 同一个vnode watcher更新数超过了最大更新数限制
-            if (has[id] != null) {
-                circular[id] = (circular[id] || 0) + 1;
-                if (circular[id] > MAX_UPDATE_COUNT) {
-                    baseWarn('代码可能出现了更新循环在' + watcher.expression + '方法中');
-                    break;
-                }
-            }
-        }
-
-        // keep copies of post queues before resetting state
-        var activatedQueue = activatedChildren.slice();
-        var updatedQueue = queue.slice();
-
-        resetSchedulerState();
-
-        // call component updated and activated hooks
-        callActivatedHooks(activatedQueue);
-        callUpdatedHooks(updatedQueue);
-
-        // devtool hook
-        /* istanbul ignore if */
-        if (devtools && config.devtools) {
-            devtools.emit('flush');
-        }
-    }
-
+    //=================================宏任务和微任务============================================
     /**
      * 创建宏任务和微任务方法（异步方法）
      * setImmediate，MessageChannel，setTimeout会，各种事件（比如鼠标单击事件）的回调函数 会产生宏任务
      * process.nextTick和Promise则会产生微任务
      */
-
-
-    var microTimerFunc;// 微任务
-    var macroTimerFunc;// 宏任务
-    var useMacroTask = false;// 使用宏任务flag
-
-    // 执行callbacks回调栈中的所有方法
-    function flushCallbacks() {
-        pending = false;
-        var copies = callbacks.slice(0);
-        callbacks.length = 0;
-        for (var i = 0; i < copies.length; i++) {
-            copies[i]();
-        }
-    };
-
-    // 浏览器支持setImmediate使用setImmediate做宏任务方法
-    if (typeof setImmediate !== 'undefined' && isNative(setImmediate)) {
-        macroTimerFunc = function () {
-            setImmediate(flushCallbacks);
-        };
-    }
-    // 浏览器支持MessageChannel使用MessageChannel做宏任务方法
-    else if (typeof MessageChannel !== 'undefined' &&
-        (isNative(MessageChannel) || MessageChannel.toString() === '[object MessageChannelConstructor]')) {
-        var channel = new MessageChannel();
-        var port = channel.port2;
-        channel.port1.onmessage = flushCallbacks;
-        macroTimerFunc = function () {
-            port.postMessage(1);
-        };
-    }
-    // 浏览器都不支持使用setTimeout做宏任务方法
-    else {
-        macroTimerFunc = function () {
-            setTimeout(flushCallbacks, 0);
-        };
-    }
-
-    // 浏览器支持Promise使用Promise做微任务方法
-    if (typeof Promise !== 'undefined' && isNative(Promise)) {
-        var p = Promise.resolve();
-        microTimerFunc = function () {
-            p.then(flushCallbacks);
-            if (isIOS) {
-                setTimeout(noop);
-            }
-        };
-    }
-    // 浏览器都不支持使用宏任务方法做为微任务方法
-    else {
-        microTimerFunc = macroTimerFunc;
-    }
-
-    //======================================vnode观察者结束====================================
+    // var microTimerFunc;// 微任务
+    // var macroTimerFunc;// 宏任务
+    // var useMacroTask = false;// 使用宏任务flag
+    //
+    // // 执行callbacks回调栈中的所有方法
+    // function flushCallbacks() {
+    //     pending = false;
+    //     var copies = callbacks.slice(0);
+    //     callbacks.length = 0;
+    //     for (var i = 0; i < copies.length; i++) {
+    //         copies[i]();
+    //     }
+    // };
+    //
+    // // 浏览器支持setImmediate使用setImmediate做宏任务方法
+    // if (typeof setImmediate !== 'undefined' && isNative(setImmediate)) {
+    //     macroTimerFunc = function () {
+    //         setImmediate(flushCallbacks);
+    //     };
+    // }
+    // // 浏览器支持MessageChannel使用MessageChannel做宏任务方法
+    // else if (typeof MessageChannel !== 'undefined' &&
+    //     (isNative(MessageChannel) || MessageChannel.toString() === '[object MessageChannelConstructor]')) {
+    //     var channel = new MessageChannel();
+    //     var port = channel.port2;
+    //     channel.port1.onmessage = flushCallbacks;
+    //     macroTimerFunc = function () {
+    //         port.postMessage(1);
+    //     };
+    // }
+    // // 浏览器都不支持使用setTimeout做宏任务方法
+    // else {
+    //     macroTimerFunc = function () {
+    //         setTimeout(flushCallbacks, 0);
+    //     };
+    // }
+    //
+    // // 浏览器支持Promise使用Promise做微任务方法
+    // if (typeof Promise !== 'undefined' && isNative(Promise)) {
+    //     var p = Promise.resolve();
+    //     microTimerFunc = function () {
+    //         p.then(flushCallbacks);
+    //         if (isIOS) {
+    //             setTimeout(noop);
+    //         }
+    //     };
+    // }
+    // // 浏览器都不支持使用宏任务方法做为微任务方法
+    // else {
+    //     microTimerFunc = macroTimerFunc;
+    // }
+    //=================================宏任务和微任务结束=======================================
 
     window.testparse = He;
 
