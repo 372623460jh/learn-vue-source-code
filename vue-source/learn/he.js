@@ -1895,17 +1895,17 @@
         this.children = children;
         // 文本
         this.text = text;
-        // this.elm = elm;
+        this.elm = elm;
         // 命名空间
         this.ns = undefined;
         // He组件上下文对象
         this.context = context;
-        // this.fnContext = undefined;
-        // this.fnOptions = undefined;
-        // this.fnScopeId = undefined;
+        this.fnContext = undefined;
+        this.fnOptions = undefined;
+        this.fnScopeId = undefined;
         this.key = data && data.key;
-        // this.componentOptions = componentOptions;
-        // this.componentInstance = undefined;
+        this.componentOptions = componentOptions;
+        this.componentInstance = undefined;
         this.parent = undefined;
         this.raw = false;
         // 是不是静态节点
@@ -1915,9 +1915,9 @@
         this.isComment = false;
         // 是不是克隆的
         this.isCloned = false;
-        // this.asyncFactory = asyncFactory;
-        // this.asyncMeta = undefined;
-        this.isAsyncPlaceholder = false;
+        this.asyncFactory = asyncFactory;
+        this.asyncMeta = undefined;
+        // this.isAsyncPlaceholder = false;
     };
     //==============================虚拟节点结束==================================
 
@@ -2486,6 +2486,11 @@
             }
         }
 
+        /**
+         * 通过dom创建vnode
+         * @param elm
+         * @returns {VNode}
+         */
         function emptyNodeAt(elm) {
             return new VNode(nodeOps.tagName(elm).toLowerCase(), {}, [], undefined, elm)
         }
@@ -2525,14 +2530,8 @@
             )
         }
 
-        var creatingElmInVPre = 0;
-
         function createElm(vnode, insertedVnodeQueue, parentElm, refElm, nested) {
-            vnode.isRootInsert = !nested; // for transition enter check
-            if (createComponent(vnode, insertedVnodeQueue, parentElm, refElm)) {
-                return
-            }
-
+            vnode.isRootInsert = !nested;
             var data = vnode.data;
             var children = vnode.children;
             var tag = vnode.tag;
@@ -2542,45 +2541,18 @@
                     : nodeOps.createElement(tag, vnode);
                 setScope(vnode);
 
-                /* istanbul ignore if */
-                {
-                    createChildren(vnode, children, insertedVnodeQueue);
-                    if (isDef(data)) {
-                        invokeCreateHooks(vnode, insertedVnodeQueue);
-                    }
-                    insert(parentElm, vnode.elm, refElm);
+                // 创建子节点
+                createChildren(vnode, children, insertedVnodeQueue);
+                if (isDef(data)) {
+                    invokeCreateHooks(vnode, insertedVnodeQueue);
                 }
-
-                if ("development" !== 'production' && data && data.pre) {
-                    creatingElmInVPre--;
-                }
+                insert(parentElm, vnode.elm, refElm);
             } else if (isTrue(vnode.isComment)) {
                 vnode.elm = nodeOps.createComment(vnode.text);
                 insert(parentElm, vnode.elm, refElm);
             } else {
                 vnode.elm = nodeOps.createTextNode(vnode.text);
                 insert(parentElm, vnode.elm, refElm);
-            }
-        }
-
-        function createComponent(vnode, insertedVnodeQueue, parentElm, refElm) {
-            var i = vnode.data;
-            if (isDef(i)) {
-                var isReactivated = isDef(vnode.componentInstance) && i.keepAlive;
-                if (isDef(i = i.hook) && isDef(i = i.init)) {
-                    i(vnode, false /* hydrating */, parentElm, refElm);
-                }
-                // after calling the init hook, if the vnode is a child component
-                // it should've created a child instance and mounted it. the child
-                // component also has set the placeholder vnode's elm.
-                // in that case we can just return the element and be done.
-                if (isDef(vnode.componentInstance)) {
-                    initComponent(vnode, insertedVnodeQueue);
-                    if (isTrue(isReactivated)) {
-                        reactivateComponent(vnode, insertedVnodeQueue, parentElm, refElm);
-                    }
-                    return true
-                }
             }
         }
 
@@ -2600,28 +2572,6 @@
                 // make sure to invoke the insert hook
                 insertedVnodeQueue.push(vnode);
             }
-        }
-
-        function reactivateComponent(vnode, insertedVnodeQueue, parentElm, refElm) {
-            var i;
-            // hack for #4339: a reactivated component with inner transition
-            // does not trigger because the inner node's created hooks are not called
-            // again. It's not ideal to involve module-specific logic in here but
-            // there doesn't seem to be a better way to do it.
-            var innerNode = vnode;
-            while (innerNode.componentInstance) {
-                innerNode = innerNode.componentInstance._vnode;
-                if (isDef(i = innerNode.data) && isDef(i = i.transition)) {
-                    for (i = 0; i < cbs.activate.length; ++i) {
-                        cbs.activate[i](emptyNode, innerNode);
-                    }
-                    insertedVnodeQueue.push(innerNode);
-                    break
-                }
-            }
-            // unlike a newly created component,
-            // a reactivated keep-alive component doesn't insert itself
-            insert(parentElm, vnode.elm, refElm);
         }
 
         function insert(parent, elm, ref$$1) {
@@ -2656,6 +2606,8 @@
             return isDef(vnode.tag)
         }
 
+        var emptyNode = new VNode('', {}, []);
+
         function invokeCreateHooks(vnode, insertedVnodeQueue) {
             for (var i$1 = 0; i$1 < cbs.create.length; ++i$1) {
                 cbs.create[i$1](emptyNode, vnode);
@@ -2671,9 +2623,6 @@
             }
         }
 
-        // set scope id attribute for scoped CSS.
-        // this is implemented as a special case to avoid the overhead
-        // of going through the normal attribute patching process.
         function setScope(vnode) {
             var i;
             if (isDef(i = vnode.fnScopeId)) {
@@ -2775,19 +2724,14 @@
             var newEndVnode = newCh[newEndIdx];
             var oldKeyToIdx, idxInOld, vnodeToMove, refElm;
 
-            // removeOnly is a special flag used only by <transition-group>
-            // to ensure removed elements stay in correct relative positions
-            // during leaving transitions
             var canMove = !removeOnly;
 
-            {
-                checkDuplicateKeys(newCh);
-            }
+            checkDuplicateKeys(newCh);
 
             while (oldStartIdx <= oldEndIdx && newStartIdx <= newEndIdx) {
-                if (isUndef(oldStartVnode)) {
+                if (!isDef(oldStartVnode)) {
                     oldStartVnode = oldCh[++oldStartIdx]; // Vnode has been moved left
-                } else if (isUndef(oldEndVnode)) {
+                } else if (!isDef(oldEndVnode)) {
                     oldEndVnode = oldCh[--oldEndIdx];
                 } else if (sameVnode(oldStartVnode, newStartVnode)) {
                     patchVnode(oldStartVnode, newStartVnode, insertedVnodeQueue);
@@ -2808,13 +2752,13 @@
                     oldEndVnode = oldCh[--oldEndIdx];
                     newStartVnode = newCh[++newStartIdx];
                 } else {
-                    if (isUndef(oldKeyToIdx)) {
+                    if (!isDef(oldKeyToIdx)) {
                         oldKeyToIdx = createKeyToOldIdx(oldCh, oldStartIdx, oldEndIdx);
                     }
                     idxInOld = isDef(newStartVnode.key)
                         ? oldKeyToIdx[newStartVnode.key]
                         : findIdxInOld(newStartVnode, oldCh, oldStartIdx, oldEndIdx);
-                    if (isUndef(idxInOld)) { // New element
+                    if (!isDef(idxInOld)) { // New element
                         createElm(newStartVnode, insertedVnodeQueue, parentElm, oldStartVnode.elm);
                     } else {
                         vnodeToMove = oldCh[idxInOld];
@@ -2831,7 +2775,7 @@
                 }
             }
             if (oldStartIdx > oldEndIdx) {
-                refElm = isUndef(newCh[newEndIdx + 1]) ? null : newCh[newEndIdx + 1].elm;
+                refElm = !isDef(newCh[newEndIdx + 1]) ? null : newCh[newEndIdx + 1].elm;
                 addVnodes(parentElm, refElm, newCh, newStartIdx, newEndIdx, insertedVnodeQueue);
             } else if (newStartIdx > newEndIdx) {
                 removeVnodes(parentElm, oldCh, oldStartIdx, oldEndIdx);
@@ -2872,23 +2816,19 @@
 
             var elm = vnode.elm = oldVnode.elm;
 
-            if (isTrue(oldVnode.isAsyncPlaceholder)) {
-                if (isDef(vnode.asyncFactory.resolved)) {
-                    hydrate(oldVnode.elm, vnode, insertedVnodeQueue);
-                } else {
-                    vnode.isAsyncPlaceholder = true;
-                }
-                return
-            }
+            // if (isTrue(oldVnode.isAsyncPlaceholder)) {
+            //     if (isDef(vnode.asyncFactory.resolved)) {
+            //         hydrate(oldVnode.elm, vnode, insertedVnodeQueue);
+            //     } else {
+            //         vnode.isAsyncPlaceholder = true;
+            //     }
+            //     return
+            // }
 
-            // reuse element for static trees.
-            // note we only do this if the vnode is cloned -
-            // if the new node is not cloned it means the render functions have been
-            // reset by the hot-reload-api and we need to do a proper re-render.
             if (isTrue(vnode.isStatic) &&
                 isTrue(oldVnode.isStatic) &&
                 vnode.key === oldVnode.key &&
-                (isTrue(vnode.isCloned) || isTrue(vnode.isOnce))
+                isTrue(vnode.isCloned)
             ) {
                 vnode.componentInstance = oldVnode.componentInstance;
                 return
@@ -2896,9 +2836,6 @@
 
             var i;
             var data = vnode.data;
-            if (isDef(data) && isDef(i = data.hook) && isDef(i = i.prepatch)) {
-                i(oldVnode, vnode);
-            }
 
             var oldCh = oldVnode.children;
             var ch = vnode.children;
@@ -2906,11 +2843,8 @@
                 for (i = 0; i < cbs.update.length; ++i) {
                     cbs.update[i](oldVnode, vnode);
                 }
-                if (isDef(i = data.hook) && isDef(i = i.update)) {
-                    i(oldVnode, vnode);
-                }
             }
-            if (isUndef(vnode.text)) {
+            if (!isDef(vnode.text)) {
                 if (isDef(oldCh) && isDef(ch)) {
                     if (oldCh !== ch) {
                         updateChildren(elm, oldCh, ch, insertedVnodeQueue, removeOnly);
@@ -2935,237 +2869,183 @@
             }
         }
 
-        function invokeInsertHook(vnode, queue, initial) {
-            // delay insert hooks for component root nodes, invoke them after the
-            // element is really inserted
-            if (isTrue(initial) && isDef(vnode.parent)) {
-                vnode.parent.data.pendingInsert = queue;
-            } else {
-                for (var i = 0; i < queue.length; ++i) {
-                    queue[i].data.hook.insert(queue[i]);
-                }
-            }
-        }
+        // function invokeInsertHook(vnode, queue, initial) {
+        //     // delay insert hooks for component root nodes, invoke them after the
+        //     // element is really inserted
+        //     if (isTrue(initial) && isDef(vnode.parent)) {
+        //         vnode.parent.data.pendingInsert = queue;
+        //     } else {
+        //         for (var i = 0; i < queue.length; ++i) {
+        //             queue[i].data.hook.insert(queue[i]);
+        //         }
+        //     }
+        // }
 
-        var hydrationBailed = false;
+        // var hydrationBailed = false;
         // list of modules that can skip create hook during hydration because they
         // are already rendered on the client or has no need for initialization
         // Note: style is excluded because it relies on initial clone for future
         // deep updates (#7063).
-        var isRenderedModule = makeMap('attrs,class,staticClass,staticStyle,key');
+        // var isRenderedModule = makeMap('attrs,class,staticClass,staticStyle,key');
 
         // Note: this is a browser-only function so we can assume elms are DOM nodes.
-        function hydrate(elm, vnode, insertedVnodeQueue, inVPre) {
-            var i;
-            var tag = vnode.tag;
-            var data = vnode.data;
-            var children = vnode.children;
-            inVPre = inVPre || (data && data.pre);
-            vnode.elm = elm;
+        // function hydrate(elm, vnode, insertedVnodeQueue, inVPre) {
+        //     var i;
+        //     var tag = vnode.tag;
+        //     var data = vnode.data;
+        //     var children = vnode.children;
+        //     inVPre = inVPre || (data && data.pre);
+        //     vnode.elm = elm;
+        //
+        //     if (isTrue(vnode.isComment) && isDef(vnode.asyncFactory)) {
+        //         vnode.isAsyncPlaceholder = true;
+        //         return true
+        //     }
+        //     // assert node match
+        //     {
+        //         if (!assertNodeMatch(elm, vnode, inVPre)) {
+        //             return false
+        //         }
+        //     }
+        //     if (isDef(data)) {
+        //         if (isDef(i = data.hook) && isDef(i = i.init)) {
+        //             i(vnode, true /* hydrating */);
+        //         }
+        //         if (isDef(i = vnode.componentInstance)) {
+        //             // child component. it should have hydrated its own tree.
+        //             initComponent(vnode, insertedVnodeQueue);
+        //             return true
+        //         }
+        //     }
+        //     if (isDef(tag)) {
+        //         if (isDef(children)) {
+        //             // empty element, allow client to pick up and populate children
+        //             if (!elm.hasChildNodes()) {
+        //                 createChildren(vnode, children, insertedVnodeQueue);
+        //             } else {
+        //                 // v-html and domProps: innerHTML
+        //                 if (isDef(i = data) && isDef(i = i.domProps) && isDef(i = i.innerHTML)) {
+        //                     if (i !== elm.innerHTML) {
+        //                         /* istanbul ignore if */
+        //                         if ("development" !== 'production' &&
+        //                             typeof console !== 'undefined' &&
+        //                             !hydrationBailed
+        //                         ) {
+        //                             hydrationBailed = true;
+        //                             console.warn('Parent: ', elm);
+        //                             console.warn('server innerHTML: ', i);
+        //                             console.warn('client innerHTML: ', elm.innerHTML);
+        //                         }
+        //                         return false
+        //                     }
+        //                 } else {
+        //                     // iterate and compare children lists
+        //                     var childrenMatch = true;
+        //                     var childNode = elm.firstChild;
+        //                     for (var i$1 = 0; i$1 < children.length; i$1++) {
+        //                         if (!childNode || !hydrate(childNode, children[i$1], insertedVnodeQueue, inVPre)) {
+        //                             childrenMatch = false;
+        //                             break
+        //                         }
+        //                         childNode = childNode.nextSibling;
+        //                     }
+        //                     // if childNode is not null, it means the actual childNodes list is
+        //                     // longer than the virtual children list.
+        //                     if (!childrenMatch || childNode) {
+        //                         /* istanbul ignore if */
+        //                         if ("development" !== 'production' &&
+        //                             typeof console !== 'undefined' &&
+        //                             !hydrationBailed
+        //                         ) {
+        //                             hydrationBailed = true;
+        //                             console.warn('Parent: ', elm);
+        //                             console.warn('Mismatching childNodes vs. VNodes: ', elm.childNodes, children);
+        //                         }
+        //                         return false
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //         if (isDef(data)) {
+        //             var fullInvoke = false;
+        //             for (var key in data) {
+        //                 if (!isRenderedModule(key)) {
+        //                     fullInvoke = true;
+        //                     invokeCreateHooks(vnode, insertedVnodeQueue);
+        //                     break
+        //                 }
+        //             }
+        //             if (!fullInvoke && data['class']) {
+        //                 // ensure collecting deps for deep class bindings for future updates
+        //                 traverse(data['class']);
+        //             }
+        //         }
+        //     } else if (elm.data !== vnode.text) {
+        //         elm.data = vnode.text;
+        //     }
+        //     return true
+        // }
 
-            if (isTrue(vnode.isComment) && isDef(vnode.asyncFactory)) {
-                vnode.isAsyncPlaceholder = true;
+        // function assertNodeMatch(node, vnode, inVPre) {
+        //     if (isDef(vnode.tag)) {
+        //         return vnode.tag.indexOf('vue-component') === 0 || (
+        //                 !isUnknownElement$$1(vnode, inVPre) &&
+        //                 vnode.tag.toLowerCase() === (node.tagName && node.tagName.toLowerCase())
+        //             )
+        //     } else {
+        //         return node.nodeType === (vnode.isComment ? 8 : 3)
+        //     }
+        // }
+
+        var isTextInputType = makeMap('text,number,password,search,email,tel,url');
+
+        function sameInputType(a, b) {
+            if (a.tag !== 'input') {
                 return true
             }
-            // assert node match
-            {
-                if (!assertNodeMatch(elm, vnode, inVPre)) {
-                    return false
-                }
-            }
-            if (isDef(data)) {
-                if (isDef(i = data.hook) && isDef(i = i.init)) {
-                    i(vnode, true /* hydrating */);
-                }
-                if (isDef(i = vnode.componentInstance)) {
-                    // child component. it should have hydrated its own tree.
-                    initComponent(vnode, insertedVnodeQueue);
-                    return true
-                }
-            }
-            if (isDef(tag)) {
-                if (isDef(children)) {
-                    // empty element, allow client to pick up and populate children
-                    if (!elm.hasChildNodes()) {
-                        createChildren(vnode, children, insertedVnodeQueue);
-                    } else {
-                        // v-html and domProps: innerHTML
-                        if (isDef(i = data) && isDef(i = i.domProps) && isDef(i = i.innerHTML)) {
-                            if (i !== elm.innerHTML) {
-                                /* istanbul ignore if */
-                                if ("development" !== 'production' &&
-                                    typeof console !== 'undefined' &&
-                                    !hydrationBailed
-                                ) {
-                                    hydrationBailed = true;
-                                    console.warn('Parent: ', elm);
-                                    console.warn('server innerHTML: ', i);
-                                    console.warn('client innerHTML: ', elm.innerHTML);
-                                }
-                                return false
-                            }
-                        } else {
-                            // iterate and compare children lists
-                            var childrenMatch = true;
-                            var childNode = elm.firstChild;
-                            for (var i$1 = 0; i$1 < children.length; i$1++) {
-                                if (!childNode || !hydrate(childNode, children[i$1], insertedVnodeQueue, inVPre)) {
-                                    childrenMatch = false;
-                                    break
-                                }
-                                childNode = childNode.nextSibling;
-                            }
-                            // if childNode is not null, it means the actual childNodes list is
-                            // longer than the virtual children list.
-                            if (!childrenMatch || childNode) {
-                                /* istanbul ignore if */
-                                if ("development" !== 'production' &&
-                                    typeof console !== 'undefined' &&
-                                    !hydrationBailed
-                                ) {
-                                    hydrationBailed = true;
-                                    console.warn('Parent: ', elm);
-                                    console.warn('Mismatching childNodes vs. VNodes: ', elm.childNodes, children);
-                                }
-                                return false
-                            }
-                        }
-                    }
-                }
-                if (isDef(data)) {
-                    var fullInvoke = false;
-                    for (var key in data) {
-                        if (!isRenderedModule(key)) {
-                            fullInvoke = true;
-                            invokeCreateHooks(vnode, insertedVnodeQueue);
-                            break
-                        }
-                    }
-                    if (!fullInvoke && data['class']) {
-                        // ensure collecting deps for deep class bindings for future updates
-                        traverse(data['class']);
-                    }
-                }
-            } else if (elm.data !== vnode.text) {
-                elm.data = vnode.text;
-            }
-            return true
+            var i;
+            var typeA = isDef(i = a.data) && isDef(i = i.attrs) && i.type;
+            var typeB = isDef(i = b.data) && isDef(i = i.attrs) && i.type;
+            return typeA === typeB || isTextInputType(typeA) && isTextInputType(typeB)
         }
 
-        function assertNodeMatch(node, vnode, inVPre) {
-            if (isDef(vnode.tag)) {
-                return vnode.tag.indexOf('vue-component') === 0 || (
-                        !isUnknownElement$$1(vnode, inVPre) &&
-                        vnode.tag.toLowerCase() === (node.tagName && node.tagName.toLowerCase())
+        function sameVnode(a, b) {
+            return (
+                a.key === b.key && (
+                    (
+                        a.tag === b.tag &&
+                        a.isComment === b.isComment &&
+                        isDef(a.data) === isDef(b.data) &&
+                        sameInputType(a, b)
                     )
-            } else {
-                return node.nodeType === (vnode.isComment ? 8 : 3)
-            }
+                )
+            )
         }
 
         return function patch(oldVnode, vnode, hydrating, removeOnly, parentElm, refElm) {
-            if (isUndef(vnode)) {
-                if (isDef(oldVnode)) {
-                    invokeDestroyHook(oldVnode);
-                }
-                return
-            }
-
-            var isInitialPatch = false;
+            // var isInitialPatch = false;
             var insertedVnodeQueue = [];
-
-            if (isUndef(oldVnode)) {
-                // empty mount (likely as component), create new root element
-                isInitialPatch = true;
-                createElm(vnode, insertedVnodeQueue, parentElm, refElm);
+            var isRealElement = isDef(oldVnode.nodeType);
+            if (!isRealElement && sameVnode(oldVnode, vnode)) {
+                patchVnode(oldVnode, vnode, insertedVnodeQueue, removeOnly);
             } else {
-                var isRealElement = isDef(oldVnode.nodeType);
-                if (!isRealElement && sameVnode(oldVnode, vnode)) {
-                    // patch existing root node
-                    patchVnode(oldVnode, vnode, insertedVnodeQueue, removeOnly);
-                } else {
-                    if (isRealElement) {
-                        // mounting to a real element
-                        // check if this is server-rendered content and if we can perform
-                        // a successful hydration.
-                        if (oldVnode.nodeType === 1 && oldVnode.hasAttribute(SSR_ATTR)) {
-                            oldVnode.removeAttribute(SSR_ATTR);
-                            hydrating = true;
-                        }
-                        if (isTrue(hydrating)) {
-                            if (hydrate(oldVnode, vnode, insertedVnodeQueue)) {
-                                invokeInsertHook(vnode, insertedVnodeQueue, true);
-                                return oldVnode
-                            } else {
-                                warn(
-                                    'The client-side rendered virtual DOM tree is not matching ' +
-                                    'server-rendered content. This is likely caused by incorrect ' +
-                                    'HTML markup, for example nesting block-level elements inside ' +
-                                    '<p>, or missing <tbody>. Bailing hydration and performing ' +
-                                    'full client-side render.'
-                                );
-                            }
-                        }
-                        // either not server-rendered, or hydration failed.
-                        // create an empty node and replace it
-                        oldVnode = emptyNodeAt(oldVnode);
-                    }
-
-                    // replacing existing element
-                    var oldElm = oldVnode.elm;
-                    var parentElm$1 = nodeOps.parentNode(oldElm);
-
-                    // create new node
-                    createElm(
-                        vnode,
-                        insertedVnodeQueue,
-                        // extremely rare edge case: do not insert if old element is in a
-                        // leaving transition. Only happens when combining transition +
-                        // keep-alive + HOCs. (#4590)
-                        oldElm._leaveCb ? null : parentElm$1,
-                        nodeOps.nextSibling(oldElm)
-                    );
-
-                    // update parent placeholder node element, recursively
-                    if (isDef(vnode.parent)) {
-                        var ancestor = vnode.parent;
-                        var patchable = isPatchable(vnode);
-                        while (ancestor) {
-                            for (var i = 0; i < cbs.destroy.length; ++i) {
-                                cbs.destroy[i](ancestor);
-                            }
-                            ancestor.elm = vnode.elm;
-                            if (patchable) {
-                                for (var i$1 = 0; i$1 < cbs.create.length; ++i$1) {
-                                    cbs.create[i$1](emptyNode, ancestor);
-                                }
-                                // #6513
-                                // invoke insert hooks that may have been merged by create hooks.
-                                // e.g. for directives that uses the "inserted" hook.
-                                var insert = ancestor.data.hook.insert;
-                                if (insert.merged) {
-                                    // start at index 1 to avoid re-invoking component mounted hook
-                                    for (var i$2 = 1; i$2 < insert.fns.length; i$2++) {
-                                        insert.fns[i$2]();
-                                    }
-                                }
-                            } else {
-                                registerRef(ancestor);
-                            }
-                            ancestor = ancestor.parent;
-                        }
-                    }
-
-                    // destroy old node
-                    if (isDef(parentElm$1)) {
-                        removeVnodes(parentElm$1, [oldVnode], 0, 0);
-                    } else if (isDef(oldVnode.tag)) {
-                        invokeDestroyHook(oldVnode);
-                    }
+                if (isRealElement) {
+                    oldVnode = emptyNodeAt(oldVnode);
+                }
+                var oldElm = oldVnode.elm;
+                // 获取dom的父元素
+                var parentElm$1 = nodeOps.parentNode(oldElm);
+                createElm(
+                    vnode,
+                    insertedVnodeQueue,
+                    oldElm._leaveCb ? null : parentElm$1,
+                    nodeOps.nextSibling(oldElm)
+                );
+                if (isDef(parentElm$1)) {
+                    removeVnodes(parentElm$1, [oldVnode], 0, 0);
                 }
             }
-
-            invokeInsertHook(vnode, insertedVnodeQueue, isInitialPatch);
+            // invokeInsertHook(vnode, insertedVnodeQueue, isInitialPatch);
             return vnode.elm
         }
     }
@@ -3344,6 +3224,47 @@
                     ? [child.class, parent.class]
                     : parent.class
             }
+        }
+
+        function stringifyArray(value) {
+            var res = '';
+            var stringified;
+            for (var i = 0, l = value.length; i < l; i++) {
+                if (isDef(stringified = stringifyClass(value[i])) && stringified !== '') {
+                    if (res) {
+                        res += ' ';
+                    }
+                    res += stringified;
+                }
+            }
+            return res
+        }
+
+        function stringifyObject(value) {
+            var res = '';
+            for (var key in value) {
+                if (value[key]) {
+                    if (res) {
+                        res += ' ';
+                    }
+                    res += key;
+                }
+            }
+            return res
+        }
+
+
+        function stringifyClass(value) {
+            if (Array.isArray(value)) {
+                return stringifyArray(value)
+            }
+            if (isObject(value)) {
+                return stringifyObject(value)
+            }
+            if (typeof value === 'string') {
+                return value
+            }
+            return ''
         }
 
         function renderClass(staticClass, dynamicClass) {
@@ -4208,13 +4129,13 @@
         // 如果之前没有vnode 直接生成新vnode
         if (!prevVnode) {
             console.log('之前没有vnode,根据vnode直接生成dom');
-            // vm.$el = vm.__patch__(vm.$el, vnode, hydrating, false, vm.$options._parentElm, vm.$options._refElm);
+            vm.$el = vm.__patch__(vm.$el, vnode, hydrating, false, vm.$options._parentElm, vm.$options._refElm);
             vm.$options._parentElm = vm.$options._refElm = null;
         }
         // 如果之前有vnode进行，比对两个vnode进行diff更新
         else {
             console.log('之前有vnode，比对两个vnode，进行dom的diff更新');
-            // vm.$el = vm.__patch__(prevVnode, vnode);
+            vm.$el = vm.__patch__(prevVnode, vnode);
         }
         // 将activeInstance恢复到更新之前状态
         activeInstance = prevActiveInstance;

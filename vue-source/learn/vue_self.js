@@ -4494,6 +4494,8 @@
             var vnode;
             try {
                 vnode = render.call(vm._renderProxy, vm.$createElement);
+                console.log('vue:');
+                console.log(vnode);
             } catch (e) {
                 handleError(e, vm, "render");
                 // return error render result,

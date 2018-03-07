@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-	<meta charset="UTF-8">
-	<title>Title</title>
+    <meta charset="UTF-8">
+    <title>Title</title>
 </head>
 <body>
 <!--<div class="test" :class="test.test2">-->
@@ -23,26 +23,26 @@
 <!--<div v-if="test">if</div>-->
 <!--<div v-else-if="test1">elseif</div>-->
 <!--</div>-->
-
-<div class="test">{{message}}
-	<span v-for="item in test.test2">{{item.asd}}</span>
-	<div v-if="test">if</div>
-	<div v-else-if="test1">elseif</div>
-</div>
+<!--<div class="test">{{message}}-->
+<!--<span v-for="item in test.test2">{{item.asd}}</span>-->
+<!--<div v-if="test">if</div>-->
+<!--<div v-else-if="test1">elseif</div>-->
+<!--</div>-->
 </body>
 <script src="./he.js" type="text/javascript"></script>
 <script src="./vue_self.js" type="text/javascript"></script>
 <script>
 
     var template =
-        '<div class="test">{{message}}' +
+        '<div class="test" :class="message">{{message}}' +
         '   <span v-for="item in test.test2">{{item.asd}}</span>' +
         '   <div v-if="test">if</div>' +
         '   <div v-else-if="test1">elseif</div>' +
+        '   <input class="input" type="text" value="">' +
         '</div>';
 
     var data = {
-        message: 'Hello Vue!',
+        message: 'Hello He!',
         test: {
             test1: '123123',
             test2: [
@@ -64,29 +64,47 @@
         ]
     };
 
-    var ss = new He({
+    var he = new He({
         template: template,
         data: data
     });
 
+    document.body.appendChild(he.$el);
+    var input = he.$el.querySelector('.input');
 
-    //        var app = new Vue({
-    //            el: '.test',
-    //            data: data
-    //        });
+    input.value = he.message;
+    input.addEventListener("input", function (event) {
+        data.message = input.value;
+        if (data.message === 'jianghe') {
+            data.test.test2 = [
+                {
+                    asd: 34578
+                },
+                {
+                    asd: 123
+                }
+            ];
+        }
+    });
 
 
-    setTimeout(function () {
-        data.message = 'asdasdadasdad';
-        data.test.test2 = [
-            {
-                asd: 34578
-            },
-            {
-                asd: 123
-            }
-        ];
-    }, 1000);
+    //            var app = new Vue({
+    //                el: '.test',
+    //                data: data
+    //            });
+
+
+    //    setTimeout(function () {
+    //        data.message = 'asdasdadasdad';
+    //        data.test.test2 = [
+    //            {
+    //                asd: 34578
+    //            },
+    //            {
+    //                asd: 123
+    //            }
+    //        ];
+    //    }, 1000);
 
     //
     //    var app1 = new Vue({
