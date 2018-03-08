@@ -868,16 +868,49 @@
         }
     }
 
+    function processKey(el) {
+        var exp = getBindingAttr(el, 'key');
+        if (exp) {
+            if (el.tag === 'template') {
+                baseWarn('<template>不能够添加keye');
+            }
+            el.key = exp;
+        }
+    }
+
+    function addAttr(el, name, value) {
+        (el.attrs || (el.attrs = [])).push({name: name, value: value});
+        el.plain = false;
+    }
+
+    /**
+     * 处理属性
+     * @param el            vdom
+     */
+    function processAttrs(el) {
+        var list = el.attrsList;
+        var i, l, name, rawName, value, modifiers, isProp;
+        for (i = 0, l = list.length; i < l; i++) {
+            // 属性名
+            name = rawName = list[i].name;
+            // 对应的值
+            value = list[i].value;
+            addAttr(el, name, JSON.stringify(value));
+        }
+    }
+
     /**
      * 处理vdom
      * @param element
      * @param options
      */
     function processElement(element) {
+        processKey(element);
         for (var i = 0; i < transforms.length; i++) {
             // 调用transforms来处理style和class
             element = transforms[i](element) || element;
         }
+        processAttrs(element);
     }
 
     /**
@@ -1628,6 +1661,20 @@
     }
 
     /**
+     * render方法中拼接原有属性
+     * @param props
+     * @returns {string}
+     */
+    function genProps(props) {
+        var res = '';
+        for (var i = 0; i < props.length; i++) {
+            var prop = props[i];
+            res += "\"" + (prop.name) + "\":" + (transformSpecialNewlines(prop.value)) + ",";
+        }
+        return res.slice(0, -1)
+    }
+
+    /**
      * 处理vdom上的其他属性
      * @param el
      * @param state
@@ -1635,9 +1682,17 @@
      */
     function genData$2(el, state) {
         var data = '{';
+        // 处理key
+        if (el.key) {
+            data += "key:" + (el.key) + ",";
+        }
         // 处理staticClass :class staticStyle :style生成相关表达式
         for (var i = 0; i < state.dataGenFns.length; i++) {
             data += state.dataGenFns[i](el);
+        }
+        // 处理属性
+        if (el.attrs) {
+            data += "attrs:{" + (genProps(el.attrs)) + "},";
         }
         data = data.replace(/,$/, '') + '}';
         return data
