@@ -68,16 +68,11 @@ git reset --hard
 - GITHUB是一个GIT服务的提供商，
 
 - 提出社交化编程
-
 http://zoomzhao.github.io/code-guide/
 https://github.com/jobbole/awesome-javascript-cn
 https://github.com/jobbole/awesome-css-cn
 
-
 - GIT分支
-
-
-
 git init //初始化本地git仓库
 git status //查看本地仓储的状态
 git status -s //查看本地仓储的状态(简单模式)
