@@ -9059,7 +9059,7 @@
 
     var decodeHTMLCached = cached(he.decode);
 
-// configurable state
+    // configurable state
     var warn$2;
     var delimiters;
     var transforms;
